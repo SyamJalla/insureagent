@@ -1,0 +1,17 @@
+prompt: | 
+        The user asked: "{user_query}"
+
+        The specialist agent provided this detailed response:
+        {specialist_response}
+
+        Your task: Create a FINAL, CLEAN response that:
+        1. Directly answers the user's original question in a friendly tone
+        2. Includes only the most relevant information (remove technical details)
+        3. Is concise and easy to understand
+        4. Ends with a polite closing
+
+        Important: Do NOT include any internal instructions, tool calls, or technical details.
+        Just provide the final answer that the user should see.
+
+        Final response:
+        

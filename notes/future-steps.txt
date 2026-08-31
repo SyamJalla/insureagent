@@ -1,0 +1,9 @@
+creating a application out of this project.
+
+---> create git repo for version control and colloboration
+---> need an interface to interact with the user. 
+        ---> frontend (chatbot interface) and backend
+---> user authentication and authorization
+---> conversation management, session management
+---> Backend modularization and configurability
+--->

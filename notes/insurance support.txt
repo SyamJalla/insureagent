@@ -1,0 +1,1347 @@
+This code builds an **AI-powered insurance customer-support agent** using:
+
+* **LangGraph** → orchestrates multiple specialized agents
+* **OpenAI** → makes routing and response decisions
+* **ChromaDB** → semantic search over insurance FAQs
+* **SQLite** → stores/query customer, policy, billing, payment, and claim data
+* **Langfuse + OpenTelemetry** → tracing/observability
+* **Hugging Face Datasets** → provides the insurance FAQ dataset
+* **YAML prompts** → keeps agent instructions outside the Python code
+
+At a high level:
+
+```text
+User question
+     │
+     ▼
+Supervisor Agent
+     │
+     ├── Policy Agent ──────► SQLite
+     │
+     ├── Claims Agent ──────► SQLite
+     │
+     ├── Billing Agent ─────► SQLite
+     │
+     ├── General Help ──────► ChromaDB ──► FAQ
+     │
+     └── Human Escalation
+             │
+             ▼
+      Final Answer Agent
+             │
+             ▼
+           User
+```
+
+## 1. FAQ / RAG setup
+
+The first section creates a knowledge base from Hugging Face.
+
+```python
+ds = load_dataset("deccan-ai/insuranceQA-v2")
+```
+
+It loads the insurance question-answer dataset.
+
+Then:
+
+```python
+df = pd.concat([split.to_pandas() for split in ds.values()])
+```
+
+combines all dataset splits into one Pandas DataFrame.
+
+This:
+
+```python
+df["combined"] = "Question: " + df["input"] + " \n Answer:  " + df["output"]
+```
+
+creates a document containing both the question and answer.
+
+Finally:
+
+```python
+df.to_csv("insurance_faq.csv", index=False)
+```
+
+saves the dataset locally.
+
+### ChromaDB
+
+```python
+chroma_client = chromadb.PersistentClient(path=persist_directory)
+```
+
+creates a persistent vector database.
+
+Then:
+
+```python
+collection = chroma_client.get_or_create_collection(
+    name=collection_name
+)
+```
+
+creates/opens the FAQ collection.
+
+`add_data_to_collection()` puts FAQ documents into ChromaDB.
+
+```python
+collection.add(
+    documents=batch_df["combined"].tolist(),
+    metadatas=[{"question": q, "answer": a} ...],
+    ids=...
+)
+```
+
+ChromaDB can then perform semantic search:
+
+```python
+results = collection.query(
+    query_texts=[query],
+    n_results=3
+)
+```
+
+So if the user asks:
+
+> What does life insurance cover?
+
+the system retrieves the three most semantically relevant FAQ entries.
+
+This is essentially a **RAG (Retrieval-Augmented Generation)** component.
+
+---
+
+# 2. Synthetic insurance database
+
+`generate_sample_data()` creates fake insurance-company data.
+
+It generates six tables:
+
+```text
+customers
+policies
+auto_policy_details
+billing
+payments
+claims
+```
+
+For example, customers contain:
+
+```text
+customer_id
+first_name
+last_name
+email
+phone
+date_of_birth
+state
+```
+
+Policies contain:
+
+```text
+policy_number
+customer_id
+policy_type
+start_date
+premium_amount
+billing_frequency
+status
+```
+
+Claims contain:
+
+```text
+claim_id
+policy_number
+claim_date
+incident_type
+estimated_loss
+status
+```
+
+The data is deliberately synthetic, so this is suitable for testing without real customer information.
+
+---
+
+# 3. SQLite database
+
+`drop_and_create_tables()` creates the database schema.
+
+For example:
+
+```sql
+CREATE TABLE policies (
+    policy_number VARCHAR(20) PRIMARY KEY,
+    customer_id VARCHAR(20),
+    policy_type VARCHAR(50),
+    ...
+);
+```
+
+Foreign keys connect the tables:
+
+```text
+customers
+   │
+   └── policies
+          │
+          ├── auto_policy_details
+          ├── billing
+          │     └── payments
+          │
+          └── claims
+```
+
+Then:
+
+```python
+df.to_sql(table, conn, if_exists='append', index=False)
+```
+
+inserts the Pandas data into SQLite.
+
+So you effectively have a small fake insurance company's backend.
+
+---
+
+# 4. Database tools
+
+The next group of functions acts as **tools that the AI agents can call**.
+
+For example:
+
+```python
+get_policy_details(logger, policy_number)
+```
+
+looks up a policy.
+
+It executes:
+
+```sql
+SELECT p.*, c.first_name, c.last_name
+FROM policies p
+JOIN customers c
+    ON p.customer_id = c.customer_id
+WHERE p.policy_number = ?
+```
+
+The `?` is important because the policy number is passed as a SQL parameter rather than concatenated into the query.
+
+---
+
+### Claims
+
+```python
+get_claim_status(...)
+```
+
+can search by either:
+
+```text
+claim_id
+```
+
+or:
+
+```text
+policy_number
+```
+
+If a policy number is provided, it returns up to the latest three claims.
+
+---
+
+### Billing
+
+```python
+get_billing_info(...)
+```
+
+retrieves the latest pending bill.
+
+It can search by:
+
+```text
+policy_number
+```
+
+or:
+
+```text
+customer_id
+```
+
+---
+
+### Payments
+
+```python
+get_payment_history(...)
+```
+
+returns the latest ten payments associated with a policy.
+
+---
+
+### Auto policy
+
+```python
+get_auto_policy_details(...)
+```
+
+returns things such as:
+
+```text
+vehicle_make
+vehicle_model
+vehicle_year
+liability_limit
+collision_deductible
+comprehensive_deductible
+rental_car_coverage
+```
+
+---
+
+# 5. OpenAI client
+
+This function:
+
+```python
+def create_client(openai_api_key):
+    client = OpenAI(api_key=openai_api_key)
+    return client
+```
+
+creates the OpenAI client.
+
+The agents then use that client to call the model.
+
+---
+
+# 6. Tool calling
+
+One of the most important pieces is:
+
+```python
+run_llm(...)
+```
+
+It allows an LLM to decide whether it needs a tool.
+
+For example, the claims agent might receive:
+
+> What's the status of claim CLM000123?
+
+The model can decide to call:
+
+```text
+get_claim_status(claim_id="CLM000123")
+```
+
+Your Python code then executes the actual function:
+
+```python
+result = tool_fn(**arguments)
+```
+
+and sends the result back to the model.
+
+Conceptually:
+
+```text
+User
+ │
+ ▼
+LLM
+ │
+ │ "I need claim information"
+ ▼
+get_claim_status()
+ │
+ ▼
+SQLite
+ │
+ ▼
+claim information
+ │
+ ▼
+LLM
+ │
+ ▼
+natural-language answer
+```
+
+That's a classic **LLM tool-calling architecture**.
+
+---
+
+# 7. Supervisor agent
+
+This is the central routing component.
+
+```python
+supervisor_agent(...)
+```
+
+Its job is **not primarily to answer the user**.
+
+Its job is to decide:
+
+> Which specialist should handle this request?
+
+It loads:
+
+```python
+SUPERVISOR_PROMPT = load_prompt("supervisor")
+```
+
+from:
+
+```text
+prompts/supervisor.yaml
+```
+
+Then it asks the model to classify/route the request.
+
+Potential output:
+
+```json
+{
+    "next_agent": "claims_agent",
+    "task": "Check the status of the customer's claim",
+    "justification": "The user is asking about an existing claim."
+}
+```
+
+The Python code extracts:
+
+```python
+next_agent = parsed.get("next_agent", "general_help_agent")
+```
+
+and puts it into the LangGraph state.
+
+---
+
+# 8. Clarification mechanism
+
+The supervisor also has an `ask_user` tool.
+
+For example, suppose the user says:
+
+> What's the status of my policy?
+
+but doesn't provide enough information.
+
+The supervisor can call:
+
+```text
+ask_user
+```
+
+with something like:
+
+```text
+question = "What is your policy number?"
+missing_info = "policy number"
+```
+
+Then your Python program currently does:
+
+```python
+answer = input(...)
+```
+
+So this is a **terminal/CLI-based human interaction**, rather than a web/chat UI interaction.
+
+The answer gets placed back into the graph state.
+
+---
+
+# 9. Specialist agents
+
+There are four major specialist paths.
+
+## Policy agent
+
+```python
+policy_agent_node(...)
+```
+
+Handles policy-related requests.
+
+It has two tools:
+
+```python
+get_policy_details
+get_auto_policy_details
+```
+
+So a question like:
+
+> What car is covered under policy POL000123?
+
+can be routed here.
+
+---
+
+## Claims agent
+
+```python
+claims_agent_node(...)
+```
+
+has:
+
+```python
+get_claim_status
+```
+
+It handles questions such as:
+
+> What's the status of claim CLM000123?
+
+---
+
+## Billing agent
+
+```python
+billing_agent_node(...)
+```
+
+has two tools:
+
+```python
+get_billing_info
+get_payment_history
+```
+
+So it can handle questions like:
+
+> Do I have a pending payment?
+
+or:
+
+> Show me my recent payment history.
+
+---
+
+## General help agent
+
+```python
+general_help_agent_node(...)
+```
+
+doesn't query SQLite.
+
+Instead, it queries ChromaDB:
+
+```python
+results = collection.query(
+    query_texts=[user_query],
+    n_results=3
+)
+```
+
+It retrieves relevant FAQs and places them into the LLM prompt.
+
+This is your **RAG agent**.
+
+For example:
+
+```text
+User:
+What does life insurance cover?
+
+       ↓
+
+ChromaDB
+
+       ↓
+
+FAQ 1
+FAQ 2
+FAQ 3
+
+       ↓
+
+LLM
+
+       ↓
+
+Answer based on FAQ context
+```
+
+---
+
+# 10. Human escalation agent
+
+There is also:
+
+```python
+human_escalation_node(...)
+```
+
+This handles cases where the system decides that a human needs to take over.
+
+It generates an escalation response using:
+
+```python
+HUMAN_ESCALATION_PROMPT
+```
+
+and sets:
+
+```python
+"requires_human_escalation": True
+```
+
+Interestingly, this doesn't actually connect to a human-support system. It only **generates an escalation message**.
+
+---
+
+# 11. LangGraph state
+
+This class is the central data structure:
+
+```python
+class GraphState(TypedDict):
+```
+
+Think of it as the **shared memory/state object passed between agents**.
+
+It contains things like:
+
+```python
+user_input
+conversation_history
+next_agent
+task
+customer_id
+policy_number
+claim_id
+messages
+final_answer
+requires_human_escalation
+```
+
+For example, after the supervisor runs:
+
+```python
+state["next_agent"] = "billing_agent"
+```
+
+Then LangGraph knows to execute the billing agent.
+
+---
+
+# 12. LangGraph workflow
+
+This is where everything is connected:
+
+```python
+workflow = StateGraph(GraphState)
+```
+
+You register nodes:
+
+```python
+workflow.add_node("supervisor_agent", supervisor)
+workflow.add_node("billing_agent", billing)
+workflow.add_node("policy_agent", policy)
+workflow.add_node("claims_agent", claims)
+workflow.add_node("general_help_agent", general)
+workflow.add_node("final_answer_agent", final_agent)
+workflow.add_node("human_escalation_agent", human)
+```
+
+Think of each node as a worker.
+
+Then:
+
+```python
+workflow.set_entry_point("supervisor_agent")
+```
+
+means every conversation begins with the supervisor.
+
+---
+
+# 13. Conditional routing
+
+This is the key routing logic:
+
+```python
+workflow.add_conditional_edges(
+    "supervisor_agent",
+    decide_next_agent,
+    {
+        "policy_agent": "policy_agent",
+        "billing_agent": "billing_agent",
+        "claims_agent": "claims_agent",
+        "general_help_agent": "general_help_agent",
+        "human_escalation_agent": "human_escalation_agent",
+        "end": "final_answer_agent"
+    }
+)
+```
+
+So:
+
+```text
+Supervisor
+   │
+   ├── policy_agent
+   ├── billing_agent
+   ├── claims_agent
+   ├── general_help_agent
+   └── human_escalation_agent
+```
+
+After a specialist finishes:
+
+```python
+workflow.add_edge("billing_agent", "supervisor_agent")
+workflow.add_edge("policy_agent", "supervisor_agent")
+workflow.add_edge("claims_agent", "supervisor_agent")
+workflow.add_edge("general_help_agent", "supervisor_agent")
+```
+
+it goes **back to the supervisor**.
+
+Therefore the architecture is actually:
+
+```text
+                 ┌───────────────┐
+                 │   Supervisor  │
+                 └───────┬───────┘
+                         │
+          ┌──────────────┼───────────────┐
+          ▼              ▼               ▼
+       Policy          Claims          Billing
+          │              │               │
+          └──────────────┼───────────────┘
+                         ▼
+                    Supervisor
+                         │
+                         ▼
+                 Final Answer
+```
+
+This allows the supervisor to decide whether another step is needed.
+
+---
+
+# 14. Iteration limit
+
+You have:
+
+```python
+n_iter = state.get("n_iteration", 0) + 1
+```
+
+and:
+
+```python
+if n_iter >= 3:
+```
+
+So the supervisor cannot keep looping indefinitely.
+
+After three iterations it does:
+
+```python
+"next_agent": "human_escalation_agent"
+```
+
+This is essentially a **circuit breaker**.
+
+Without this, a badly designed routing system could potentially do:
+
+```text
+Supervisor
+ → Billing
+ → Supervisor
+ → Billing
+ → Supervisor
+ → Billing
+ → ...
+```
+
+forever.
+
+---
+
+# 15. Final answer agent
+
+Once the workflow decides that the task is finished:
+
+```python
+"end": "final_answer_agent"
+```
+
+the final answer agent runs.
+
+It takes the specialist response:
+
+```python
+specialist_response
+```
+
+and asks another LLM to turn it into a clean customer-facing response.
+
+So the specialist might produce something somewhat technical:
+
+```text
+Billing lookup returned:
+status=pending
+amount_due=327.42
+```
+
+and the final agent could turn that into:
+
+> Your latest bill is currently pending, with an amount due of $327.42.
+
+This gives you a separation between:
+
+```text
+Data retrieval
+      ↓
+Specialist reasoning
+      ↓
+Customer-facing response
+```
+
+---
+
+# 16. Observability
+
+You have two observability systems here.
+
+### Langfuse
+
+You use:
+
+```python
+@observe(name="...")
+```
+
+on many functions.
+
+For example:
+
+```python
+@observe(name="claims_agent")
+```
+
+This allows you to trace LLM/application operations.
+
+You also explicitly call:
+
+```python
+langfuse.flush()
+```
+
+at the end of a query.
+
+---
+
+### OpenTelemetry
+
+You also use:
+
+```python
+tracer = trace.get_tracer(__name__)
+```
+
+and:
+
+```python
+with tracer.start_as_current_span("sqlite_get_claim_status"):
+```
+
+This creates spans for database operations.
+
+You record attributes such as:
+
+```python
+span.set_attribute("db.system", "sqlite")
+span.set_attribute("db.operation", "SELECT")
+span.set_attribute("claim_id", claim_id)
+```
+
+So your observability tree could look conceptually like:
+
+```text
+insurance_query
+│
+├── supervisor_agent
+│
+├── claims_agent
+│   └── run_llm
+│       └── sqlite_get_claim_status
+│
+└── final_answer_agent
+```
+
+That's useful for debugging latency, failures, routing behavior, and tool usage.
+
+---
+
+# 17. YAML prompts
+
+This function:
+
+```python
+def load_prompt(prompt_name):
+```
+
+loads:
+
+```text
+prompts/<prompt_name>.yaml
+```
+
+For example:
+
+```python
+load_prompt("claims_agent")
+```
+
+loads:
+
+```text
+prompts/claims_agent.yaml
+```
+
+This is a good architectural choice because your prompts aren't hard-coded into the Python logic.
+
+You effectively have:
+
+```text
+Python
+ ├── orchestration
+ ├── database
+ ├── tools
+ └── application logic
+
+YAML
+ ├── supervisor instructions
+ ├── claims instructions
+ ├── billing instructions
+ ├── policy instructions
+ └── final-answer instructions
+```
+
+---
+
+# 18. `run_test_query()`
+
+This is the entry point for testing.
+
+You give it:
+
+```python
+run_test_query(
+    "What is the status of claim CLM000123?",
+    app,
+    langfuse
+)
+```
+
+It creates the initial state:
+
+```python
+initial_state = {
+    "n_iteration": 0,
+    "messages": [],
+    "user_input": query,
+    ...
+}
+```
+
+Then:
+
+```python
+final_state = app.invoke(initial_state)
+```
+
+starts the LangGraph workflow.
+
+The graph then handles the request.
+
+Finally:
+
+```python
+final_answer = final_state.get("final_answer")
+```
+
+prints the customer-facing answer.
+
+---
+
+# 19. Example end-to-end execution
+
+Suppose the user asks:
+
+> What is the status of claim CLM000015?
+
+The flow would roughly be:
+
+### Step 1 — Initial state
+
+```text
+user_input =
+"What is the status of claim CLM000015?"
+```
+
+### Step 2 — Supervisor
+
+LLM determines:
+
+```json
+{
+  "next_agent": "claims_agent",
+  "task": "Retrieve the status of claim CLM000015"
+}
+```
+
+### Step 3 — Claims agent
+
+The claims agent gets the task and calls:
+
+```python
+get_claim_status(
+    logger,
+    claim_id="CLM000015"
+)
+```
+
+### Step 4 — SQLite
+
+SQL retrieves:
+
+```text
+claim_id
+policy_number
+claim_date
+incident_type
+estimated_loss
+status
+policy_type
+```
+
+### Step 5 — Claims LLM
+
+The tool output is sent back to the LLM.
+
+It produces something like:
+
+```text
+The claim is currently under review.
+```
+
+### Step 6 — Supervisor
+
+The specialist response goes back to the supervisor.
+
+The supervisor determines that the request is complete.
+
+### Step 7 — Final answer agent
+
+The final agent creates a polished response.
+
+### Step 8
+
+Graph terminates:
+
+```text
+final_answer_agent → END
+```
+
+---
+
+# 20. The architecture in one picture
+
+Your application is essentially a **multi-agent RAG + tool-calling system**:
+
+```text
+                         ┌──────────────────┐
+                         │      USER        │
+                         └────────┬─────────┘
+                                  │
+                                  ▼
+                       ┌─────────────────────┐
+                       │  SUPERVISOR AGENT   │
+                       │      GPT model      │
+                       └──────────┬──────────┘
+                                  │
+              ┌───────────────────┼────────────────────┐
+              │                   │                    │
+              ▼                   ▼                    ▼
+      ┌──────────────┐    ┌──────────────┐    ┌────────────────┐
+      │ Policy Agent │    │ Claims Agent │    │ Billing Agent  │
+      └──────┬───────┘    └──────┬───────┘    └───────┬────────┘
+             │                   │                     │
+             ▼                   ▼                     ▼
+          SQLite              SQLite                SQLite
+             │                   │                     │
+             └───────────────────┼─────────────────────┘
+                                 │
+                                 ▼
+                         ┌────────────────┐
+                         │   Supervisor   │
+                         └───────┬────────┘
+                                 │
+                ┌────────────────┼─────────────────┐
+                │                │                 │
+                ▼                ▼                 ▼
+          General Help      Human Escalation    Finished
+                │                                  │
+                ▼                                  ▼
+             ChromaDB                       Final Answer Agent
+                │                                  │
+                ▼                                  ▼
+             FAQ/RAG                              USER
+```
+
+---
+
+# 21. Important bugs/issues in the current code
+
+There are several things I'd fix before treating this as production-ready.
+
+### 1. `get_policy_details()` has a real bug
+
+You do:
+
+```python
+result = cursor.fetchone()
+response = dict(zip(columns, result))
+```
+
+**before `columns` is defined**.
+
+`columns` is only created later:
+
+```python
+columns = [
+    desc[0]
+    for desc in cursor.description
+]
+```
+
+So if a policy is found, this can raise:
+
+```text
+UnboundLocalError: local variable 'columns' referenced before assignment
+```
+
+Move the `columns` creation before `response`.
+
+---
+
+### 2. `GraphState` doesn't declare some fields you use
+
+You use:
+
+```python
+needs_clarification
+clarification_question
+user_clarification
+```
+
+but they aren't declared in `GraphState`.
+
+Add them if you're using them as formal graph state.
+
+---
+
+### 3. Initial state doesn't contain `policy_number` or `customer_id`
+
+Your specialist agents expect them, but the initial state doesn't explicitly initialize:
+
+```python
+policy_number
+customer_id
+```
+
+You should initialize them, for example:
+
+```python
+"policy_number": None,
+"customer_id": None,
+```
+
+---
+
+### 4. `messages` handling is potentially confusing
+
+You're using:
+
+```python
+Annotated[List[Any], add_messages]
+```
+
+but some nodes return:
+
+```python
+[("assistant", result)]
+```
+
+while `final_answer_agent` manually replaces:
+
+```python
+state["messages"] = clean_messages
+```
+
+It's better to establish one consistent message/state strategy.
+
+---
+
+### 5. The supervisor doesn't actually use the latest specialist result very clearly
+
+The specialist nodes return messages, but the supervisor's prompt is primarily based on:
+
+```python
+conversation_history
+```
+
+You should make sure the specialist response is reliably incorporated into the state that the supervisor sees.
+
+---
+
+### 6. `ask_user()` blocks the application
+
+This:
+
+```python
+answer = input(...)
+```
+
+works for a notebook/terminal application, but it won't work properly in a typical web API, Streamlit app, chatbot backend, etc.
+
+For production, clarification should normally be represented as a graph state such as:
+
+```text
+needs_clarification = True
+clarification_question = "What is your policy number?"
+```
+
+Then the application sends that question to the user and resumes the graph when the user responds.
+
+---
+
+### 7. Your supervisor iteration limit is quite aggressive
+
+```python
+if n_iter >= 3:
+```
+
+means the system escalates after only three supervisor visits.
+
+Since the normal architecture is:
+
+```text
+Supervisor → Specialist → Supervisor
+```
+
+you can reach the limit relatively quickly.
+
+---
+
+### 8. Tool schemas should mark required arguments
+
+For example:
+
+```python
+"parameters": {
+    "type": "object",
+    "properties": {
+        "policy_number": {"type": "string"}
+    }
+}
+```
+
+but there is no:
+
+```python
+"required": ["policy_number"]
+```
+
+The model therefore has less guidance about which parameters are mandatory.
+
+---
+
+### 9. Hard-coded database path
+
+Your database functions use:
+
+```python
+"datasources/database/insurance_support.db"
+```
+
+instead of accepting the DB path.
+
+That makes testing and deployment harder.
+
+A configuration value would be cleaner.
+
+---
+
+### 10. There are duplicated imports
+
+For example:
+
+```python
+from datetime import datetime, timedelta
+```
+
+and later:
+
+```python
+from datetime import datetime
+```
+
+Also:
+
+```python
+from functools import wraps
+```
+
+is imported twice.
+
+Not harmful, but unnecessary.
+
+---
+
+# 22. What this project really is
+
+If I had to describe your code in one sentence:
+
+> **It is a LangGraph-based multi-agent insurance support system where an LLM supervisor routes customer questions to specialized policy, claims, billing, or FAQ/RAG agents, which use SQLite or ChromaDB tools to retrieve information, with Langfuse/OpenTelemetry providing observability.**
+
+The important conceptual separation is:
+
+**LangGraph = orchestration**
+
+**OpenAI = reasoning / tool selection / response generation**
+
+**SQLite = structured transactional data**
+
+**ChromaDB = unstructured knowledge / FAQ retrieval**
+
+**YAML = agent instructions**
+
+**Langfuse + OpenTelemetry = observability**
+
+**Python functions = tools**
+
+That separation is the core design of your application.
