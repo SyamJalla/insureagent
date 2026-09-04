@@ -18,3 +18,9 @@ matplotlib
 langfuse
 #langfuse-openai
 pyyaml
+fastapi
+uvicorn
+pydantic-settings
+python-jose[cryptography]
+bcrypt
+httpx
