@@ -1,23 +1,27 @@
 # InsureAgent
 
-A multi-agent insurance customer-support assistant built on **LangGraph**. A supervisor
-agent classifies each user query, routes it to a specialist agent (policy, billing,
-claims, general help, or human escalation), and loops back until a final answer agent
-composes the response.
+A multi-agent insurance customer-support **web application** for an imaginary insurance
+company. Users log in (customers, prospects, agents, employees, admins — see
+[CONTEXT.md](CONTEXT.md)) and chat with an AI assistant. A LangGraph supervisor agent
+routes each question to a specialist agent (policy, billing, claims, general help, or
+human escalation); a final answer agent composes the response. The backend resolves each
+user's identity server-side, so a customer asking "what is my premium?" gets the answer
+for *their own* policies without ever typing a policy number.
 
 Specialist agents answer from two local data sources: a **SQLite** database of synthetic
 customer/policy/claim/billing records, and a **ChromaDB** vector collection of insurance
-FAQs used for retrieval-augmented general-help answers. LLM calls go to OpenAI; traces
-are sent to a self-hosted **Langfuse** instance.
+FAQs (RAG for general knowledge only — never customer data). LLM calls go to OpenAI;
+traces to a self-hosted **Langfuse**.
 
 ## What this is NOT
 
-- Not a production service — there is no API, no web interface, no authentication, and no
-  session management. The entry point runs a single hardcoded test query.
-- Not backed by real data. Every customer, policy, claim, and payment record is generated
-  synthetically by `utils.generate_sample_data()`.
-- Not yet modularized. `agents/` contains empty placeholder files; all agent logic
-  currently lives in `utils.py`. See [notes/future-steps.txt](notes/future-steps.txt).
+- Not backed by real data — every record is synthetic; demo accounts use a shared
+  password printed by the seed script.
+- Not yet enforcing tool-layer authorization — user identity flows *into* the agent
+  graph, but the underlying tools don't yet reject cross-customer lookups. Planned
+  after the `utils.py` refactor.
+- Not deployed — everything runs locally; Cognito/Postgres/cloud are later swap-ins
+  behind existing interfaces (see [docs/design/phase1-backbone.md](docs/design/phase1-backbone.md)).
 
 ## Environment
 
@@ -31,88 +35,79 @@ pip install -r requirements.txt
 
 ## Setup
 
-1. **Configure secrets.** Create a `.env` file in the project root (it is git-ignored):
+1. **Configure secrets.** Create a `.env` file in the project root (git-ignored):
 
    ```
    OPENAI_API_KEY=sk-...
-   LANGFUSE_SECRET_KEY=sk-lf-...
+   JWT_SECRET=<openssl rand -hex 32>
+   LANGFUSE_SECRET_KEY=sk-lf-...      # optional; tracing disabled without it
    LANGFUSE_PUBLIC_KEY=pk-lf-...
    LANGFUSE_BASE_URL=http://localhost:3000
    ```
 
-2. **Start Langfuse** (tracing backend — Postgres, ClickHouse, Redis, MinIO):
+2. **Start Langfuse** (optional, tracing): `docker compose up -d` → UI at
+   http://localhost:3000. Change the `# CHANGEME` credentials in `docker-compose.yml`
+   before exposing anywhere.
+
+3. **Build the data sources** (writes to `datasources/`, git-ignored):
 
    ```bash
-   docker compose up -d
+   python create_vectordb.py     # FAQ vector DB + synthetic insurance DB
+   python scripts/seed_users.py  # demo user accounts + policy-agent links
    ```
 
-   The UI is at http://localhost:3000. Change the `# CHANGEME` credentials in
-   `docker-compose.yml` before exposing this anywhere.
-
-3. **Build the data sources** (writes to `datasources/`, both git-ignored):
-
-   ```bash
-   python create_vectordb.py
-   ```
-
-   This creates the FAQ vector collection and seeds the synthetic SQLite database.
-
-4. **Verify the data loaded:**
-
-   ```bash
-   python retrieve_data.py
-   ```
+   The seed script prints the demo logins (e.g. `customer1@demo.local` / `demo123`).
 
 ## Running
 
 ```bash
-python insurance_agent.py
+uvicorn app.main:app --reload
 ```
 
-The test query is currently hardcoded near the bottom of
-[insurance_agent.py](insurance_agent.py) — edit `test_query` to try a different one.
+Open http://localhost:8000 — log in with a seeded account and chat. API docs at
+http://localhost:8000/docs.
 
-## Agent graph
+## Architecture
 
 ```
-                    ┌──────────────────┐
-   user query ─────►│    supervisor    │◄──────────┐
-                    └────────┬─────────┘           │
-                             │ routes to           │ returns
-        ┌────────────┬───────┴───────┬─────────────┤
-        ▼            ▼               ▼             ▼
-     policy       billing         claims      general help
-                                              (FAQ retrieval)
-                             │
-              ┌──────────────┴──────────────┐
-              ▼                             ▼
-       final answer ─► END        human escalation ─► END
+Frontend (static chat page — pure API consumer, JWT only)
+   ↓
+API layer (FastAPI: auth, conversations; middleware builds RequestContext)
+   ↓
+Conversation service (sessions, history, context assembly)
+   ↓
+Agent layer (LangGraph: supervisor → specialists → final answer)
+   ↓
+Tool layer (typed tools; future authorization enforcement — "LLMs reason; systems decide")
+   ↓
+SQLite (customer/policy data) · ChromaDB (FAQ RAG) · OpenAI · Langfuse
 ```
 
-Shared state flows through `GraphState` (a `TypedDict` in `utils.py`), which carries the
-conversation history, extracted entities, routing decision, database lookup results, and
-escalation flags.
+Each layer knows only the one below it. `RequestContext` (who is asking: user, role,
+owned policies — resolved server-side from the JWT) flows downward on every request.
+Full design: [docs/design/phase1-backbone.md](docs/design/phase1-backbone.md).
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
-| `insurance_agent.py` | Entry point — loads config, builds the graph, runs one query. |
-| `utils.py` | All agent nodes, tools, graph wiring, DB and vector-store helpers. |
-| `create_vectordb.py` | One-time setup: builds the FAQ vector DB and seeds SQLite. |
-| `retrieve_data.py` | Smoke test for the vector store and database. |
-| `insurance_data_prep.py` | Earlier data-prep script, superseded by `create_vectordb.py`. |
-| `prompts/` | One YAML prompt file per agent, loaded by `utils.load_prompt()`. |
-| `agents/` | Placeholder modules for the planned split of `utils.py`. Currently empty. |
+| `app/` | The application package: `api/` routers, `auth/` (JWT provider, RequestContext), `conversations/` (store + service), `agents/runner.py` (sole importer of `utils.py`), `static/` chat UI, `config.py` Pydantic settings. |
+| `utils.py` | Legacy: all agent nodes, tools, graph wiring. Refactor pending (Jayanth). |
+| `scripts/seed_users.py` | Demo users + policy-agent associations. Owns all schema extensions. |
+| `create_vectordb.py` | One-time setup: FAQ vector DB + synthetic SQLite data. |
+| `prompts/` | One YAML prompt file per agent. |
 | `datasources/` | Generated SQLite DB and Chroma vector store. Git-ignored. |
-| `notes/` | Design notes and the roadmap. |
+| `docs/` | Design docs (`design/`), future ADRs (`adr/`). |
+| `notes/` | Team notes, target architecture, work split. |
 | `docker-compose.yml` | Self-hosted Langfuse stack for tracing. |
 
 ## Known rough edges
 
-- `utils.py` is ~1800 lines and mixes agent logic, tool implementations, database access,
-  and graph construction. Splitting it into `agents/` is the next planned step.
-- `insurance_data_prep.py` writes to different paths than the rest of the project
-  (`/vectordb`, `insurance_support.db` at the root) and uses a different collection name.
-  Use `create_vectordb.py` instead.
+- `utils.py` (~1800 lines) mixes agent logic, tools, DB access, and graph wiring;
+  its split is Jayanth's workstream. `app/agents/runner.py` is the only import seam.
+- `runner.py` patches `utils.ask_user` so clarification questions become chat replies
+  instead of blocking console `input()` — should become a first-class graph outcome
+  in the refactor.
+- The graph is invoked synchronously per message (single worker blocks during LLM
+  calls); fine for demo scale, revisit before load testing.
 - Prompts are file-based YAML rather than versioned in Langfuse.
