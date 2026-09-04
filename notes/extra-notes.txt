@@ -1,0 +1,257 @@
+# 4. API Layer
+
+You have:
+
+text
+Amazon API Gateway
+        ↓
+Supervisor
+
+
+Good.
+
+But I would introduce a *Conversation/Agent API service* between API Gateway and the agent runtime.
+
+text
+API Gateway
+     ↓
+Conversation Service
+     ↓
+Agent Runtime
+     ↓
+Supervisor
+
+
+Why?
+
+Because the API layer should handle things like:
+
+* request validation
+* conversation ID
+* customer ID
+* authentication context
+* rate limiting
+* idempotency
+* request correlation ID
+* session management
+* streaming responses
+* throttling
+
+The Supervisor shouldn't have to deal with those concerns.
+
+# 5. Supervisor Agent
+
+This is the *most important component* in your architecture.
+
+Currently:
+
+text
+Insurance AI Orchestrator
+(Supervisor Agent)
+
+
+This is correct conceptually.
+
+But I would make its responsibilities very explicit.
+
+### Supervisor should do
+
+text
+User request
+     ↓
+Intent detection
+     ↓
+Entity extraction
+     ↓
+Determine required agents
+     ↓
+Plan
+     ↓
+Execute agents
+     ↓
+Validate results
+     ↓
+Determine escalation
+     ↓
+Final response
+
+
+For example:
+
+> "My claim is delayed and I was charged twice this month."
+
+Supervisor:
+
+text
+                    Supervisor
+                    /        \
+                   /          \
+                  ↓            ↓
+            Claims Agent   Billing Agent
+                  │            │
+                  ↓            ↓
+             Claim API     Billing API
+                  │            │
+                  └─────┬──────┘
+                        ↓
+                  Result Validator
+                        ↓
+                  Final Response
+
+
+### Important improvement
+
+Don't make the supervisor directly query every enterprise system.
+
+Instead:
+
+text
+Supervisor
+    ↓
+Specialized Agent
+    ↓
+Domain Tools
+    ↓
+Enterprise System
+
+
+This provides much better separation of responsibility.
+
+---
+
+
+# 6. Specialized Agents
+
+Your:
+
+text
+Policy Agent
+Claims Agent
+Billing Agent
+Knowledge Agent
+Human Support Agent
+
+
+is a good decomposition.
+
+But I'd change the architecture slightly.
+
+---
+
+## Policy Agent
+
+The Policy Agent should own *policy-related reasoning*.
+
+text
+Policy Agent
+     │
+     ├── get_policy
+     ├── get_coverage
+     ├── get_policy_status
+     ├── get_documents
+     ├── calculate_eligibility
+     └── policy_change_request
+
+
+The agent shouldn't directly connect to your Policy Management System.
+
+Instead:
+
+text
+Policy Agent
+      ↓
+Policy Tools
+      ↓
+Policy Service/API
+      ↓
+Policy Management System
+
+
+This is a major architectural improvement.
+
+
+---
+
+# 7. Claims Agent
+
+Same principle.
+
+Current conceptual flow:
+
+text
+Claims Agent
+     ↓
+Claims Management System
+
+
+I'd implement:
+
+text
+Claims Agent
+     ↓
+Claims Tools
+     ↓
+Claims Service
+     ↓
+Claims Management System
+
+
+Tools could include:
+
+text
+get_claim_status()
+get_claim_details()
+get_claim_documents()
+get_claim_payment()
+get_adjuster()
+create_claim_request()
+
+[13:14, 01/09/2026] Krishna: ### Important
+
+Some claims operations should require *deterministic business rules* rather than LLM decisions.
+
+For example:
+
+text
+"Is this claim eligible?"
+
+LLM → understands question
+
+Business Rules Engine
+    → determines eligibility
+
+LLM → explains result
+
+
+Don't let the LLM make authoritative coverage/eligibility decisions.
+
+---
+[13:16, 01/09/2026] Krishna: # 8. Billing Agent
+
+Same pattern:
+
+text
+Billing Agent
+     ↓
+Billing Tools
+     ↓
+Billing Service
+     ↓
+Billing Platform
+
+
+Example tools:
+
+text
+get_invoice()
+get_balance()
+get_payment_history()
+verify_payment()
+find_duplicate_payment()
+get_due_date()
+create_billing_case()
+
+
+Again, actual amounts and transaction status should come from authoritative systems.
+
+---

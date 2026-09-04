@@ -1,0 +1,87 @@
+
+---> create git repo for version control and colloboration
+---> frontend (chatbot interface) and backend [fastapi]
+---> user authentication [user/google login/aws cognito service] and authorization
+---> conversation management, session management, context management
+---> Backend modularization and configurability
+---> logging and monitoring [langfuse/langsmith/cloud watch]
+---> guardrails
+---> cost management
+---> deployment in cloud
+---> CI/CD pipeline
+---> more detailed backend structure
+Evaluation
+Fallback
+Feedback
+
+
+Contextual Memory
+
+maintain conversation history
+personalise responses based on user role and permissions
+understand follow up questions without repeating context
+
+Experince
+
+Security and compliance
+ 
+role base access control (user management)
+single sign-on (SSO)
+data encryption
+audit logs
+respect existing user permissions
+compliance support()
+
+guardrails & cost management
+
+Latency/Concurrence
+
+using open source LLM 
+llama/qwen
+
+vectordbs
+
+open source decision
+
+
+
+next steps
+
+Backend
+
+microservices
+
+front end single page normal chatbot bottom
+
+Jayanth and Me
+
+Architecture diagram
+cost estimation (loose)
+experimentation with open source (llama/qwen)
+memory (conversation memory)
+
+Krishna
+Gaurdrails middle ware to current project
+
+Jayanth
+existing code corrections(standards)
+
+environ ment decisions (compatible)
+
+Syam : 
+---> create git repo for version control and colloboration
+---> user authentication [user/google login/aws cognito service] and authorization
+---> conversation management, session management, context management 
+
+AWS
+
+cost efficient
+experince
+salesman pointers
+
+conversation management, session management, context management
+
+threading//// multiple users
+
+
+
