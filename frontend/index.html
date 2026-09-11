@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IMAS-AI Insurance Support</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col items-center justify-center p-4">
+    
+    <div class="w-full max-w-2xl bg-white rounded-lg shadow-lg overflow-hidden flex flex-col h-[80vh]">
+        <!-- Header -->
+        <div class="bg-blue-600 text-white p-4 text-center font-bold text-xl">
+            IMAS-AI Support Agent
+        </div>
+        
+        <!-- Chat Area -->
+        <div id="chatBox" class="flex-1 p-4 overflow-y-auto space-y-4">
+            <div class="flex justify-start">
+                <div class="bg-gray-200 text-gray-800 rounded-lg p-3 max-w-[80%]">
+                    Hello! How can I help you with your insurance today?
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 border-t bg-gray-50 flex gap-2">
+            <input type="text" id="queryInput" placeholder="Type your message..." 
+                class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-600">
+            <button id="sendBtn" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                Send
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const chatBox = document.getElementById('chatBox');
+        const queryInput = document.getElementById('queryInput');
+        const sendBtn = document.getElementById('sendBtn');
+
+        function addMessage(text, isUser) {
+            const div = document.createElement('div');
+            div.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
+            
+            const bubble = document.createElement('div');
+            bubble.className = `rounded-lg p-3 max-w-[80%] ${isUser ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'}`;
+            bubble.innerText = text;
+            
+            div.appendChild(bubble);
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const query = queryInput.value.trim();
+            if (!query) return;
+
+            addMessage(query, true);
+            queryInput.value = '';
+
+            try {
+                const res = await fetch('http://localhost:8000/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: query })
+                });
+                const data = await res.json();
+                
+                if (data.response) {
+                    addMessage(data.response, false);
+                } else {
+                    addMessage('Sorry, an error occurred.', false);
+                }
+            } catch (err) {
+                addMessage('Failed to connect to the server.', false);
+            }
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        queryInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    </script>
+</body>
+</html>

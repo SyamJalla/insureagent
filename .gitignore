@@ -1,0 +1,24 @@
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+# .gitignore
+.vscode/
+# Environment and local configuration
+.env
+.env.*
+!.env.example
+
+# Logs and local runtime files
+*.log
+
+# Generated local databases and vector indexes
+backend/datasources/database/*
+!backend/datasources/database/.gitkeep
+backend/datasources/vector_database/*
+!backend/datasources/vector_database/.gitkeep
+
+# Editor and OS files
+.DS_Store
