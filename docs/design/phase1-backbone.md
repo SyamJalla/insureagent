@@ -2,7 +2,7 @@
 
 Design walkthrough for the FastAPI backbone: auth, conversation/session management,
 dummy user data, and the v1 chat frontend. Review this before implementation.
-Vocabulary per [CONTEXT.md](../../CONTEXT.md).
+Vocabulary per the Domain model section of the [README](../../README.md).
 
 Scope boundary (agreed): user identity flows *into* the agent graph, but tool-layer
 authorization enforcement lands after the `utils.py` refactor. The existing LangGraph
@@ -154,7 +154,7 @@ GET  /health                                          → {status}
 
 New table `users` (user_id PK, email UNIQUE, password_hash, display_name, role,
 customer_id NULL FK, agent_id NULL, created_at) + new column `policies.agent_id`
-(NULL = direct policy, per CONTEXT.md). Conversations/messages tables created by the
+(NULL = direct policy, per the README domain model). Conversations/messages tables created by the
 store on first run.
 
 Seed set (password printed on seed, e.g. all `demo123`):
