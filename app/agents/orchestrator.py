@@ -15,6 +15,8 @@ def route_after_supervisor(state: GraphState) -> str:
     """Priority-ordered decision — plain code (LLMs reason; systems decide)."""
     if state.get("outcome") == "clarification":
         return "clarify"
+    if state.get("outcome") == "answer":
+        return "direct"  # supervisor answered directly (small talk / out-of-scope)
     if state.get("requires_human_escalation"):
         return "human_escalation_agent"
     next_agent = state.get("next_agent", "general_help_agent")
@@ -40,6 +42,7 @@ def build_graph():
         route_after_supervisor,
         {
             "clarify": END,  # clarification question returns to the user as the reply
+            "direct": END,   # supervisor's own reply is the final answer
             "policy_agent": "policy_agent",
             "billing_agent": "billing_agent",
             "claims_agent": "claims_agent",

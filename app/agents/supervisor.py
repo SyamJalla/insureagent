@@ -32,8 +32,13 @@ _ASK_USER_SPEC = {
 
 _VALID_AGENTS = {
     "policy_agent", "billing_agent", "claims_agent",
-    "general_help_agent", "human_escalation_agent", "end",
+    "general_help_agent", "human_escalation_agent", "end", "respond",
 }
+
+_FALLBACK_REPLY = (
+    "I can help with your policies, billing, and claims, or answer general "
+    "insurance questions. What would you like to know?"
+)
 
 
 def _parse_json(text: str) -> dict:
@@ -50,10 +55,18 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
     ctx, llm, _tools = _cfg(config)
     n = state.get("n_iteration", 0) + 1
     if n > MAX_ITERATIONS:
+        # Loop exhaustion is NOT an escalation trigger: hand what we have to the
+        # final answer node, which acknowledges the limit and OFFERS a human.
+        # Real escalation stays reserved for flagged reasons (explicit request,
+        # supervisor judgment).
         return {
             "n_iteration": n,
-            "requires_human_escalation": True,
-            "escalation_reason": f"iteration limit ({MAX_ITERATIONS}) reached",
+            "next_agent": "end",
+            "collected_facts": [
+                "[system note] Iteration limit reached before the request was fully "
+                "resolved. Answer with what is known, acknowledge the limitation, "
+                "and offer to connect the user with a human specialist."
+            ],
         }
 
     system = render(
@@ -82,9 +95,34 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
             }
 
     decision = _parse_json(response.content or "")
-    next_agent = decision.get("next_agent", "general_help_agent")
+
+    # Contract violation (no JSON): never guess a route. If the model replied
+    # in conversational prose, that prose IS the reply; otherwise a safe fallback.
+    if not decision:
+        prose = (response.content or "").strip()
+        return {
+            "n_iteration": n,
+            "final_answer": prose or _FALLBACK_REPLY,
+            "outcome": "answer",
+        }
+
+    next_agent = decision.get("next_agent", "")
     if next_agent not in _VALID_AGENTS:
-        next_agent = "general_help_agent"
+        return {
+            "n_iteration": n,
+            "final_answer": _FALLBACK_REPLY,
+            "outcome": "answer",
+        }
+
+    # Direct response: small talk, capability questions, out-of-scope. The
+    # supervisor is the answer; no specialist, no tools, straight to END.
+    if next_agent == "respond":
+        return {
+            "n_iteration": n,
+            "final_answer": decision.get("response") or _FALLBACK_REPLY,
+            "outcome": "answer",
+        }
+
     try:
         complexity = Complexity(decision.get("complexity", "standard"))
     except ValueError:

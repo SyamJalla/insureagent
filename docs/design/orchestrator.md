@@ -16,8 +16,9 @@ flowchart TD
     SUP -->|next_agent| CLM[claims_agent]
     SUP -->|next_agent| GEN[general_help_agent]
     SUP -->|clarification| ENDC([END: clarification])
-    SUP -->|'end'| FIN[final_answer_agent]
-    SUP -->|escalation flag<br/>or iteration > 3| HUM[human_escalation_agent]
+    SUP -->|direct respond<br/>small talk / out-of-scope| ENDD([END: answer])
+    SUP -->|'end' or iteration cap| FIN[final_answer_agent]
+    SUP -->|escalation flag| HUM[human_escalation_agent]
     POL --> SUP
     BIL --> SUP
     CLM --> SUP
@@ -29,6 +30,13 @@ flowchart TD
 Three **first-class outcomes**: `answer | clarification | escalation` — a
 clarification question is simply the graph's result (the old console-input
 monkeypatch is gone); the user's reply returns via conversation history.
+
+Non-task messages (greetings, capability questions, out-of-scope requests) get
+a **direct supervisor response** (`next_agent: "respond"`) — no specialist, no
+tools, one LLM call. A contract-violating supervisor reply (no JSON) is treated
+as that direct response, never guessed into a route. The iteration cap (3) exits
+via **final_answer with an offer of human help** — escalation is reserved for
+flagged reasons, never loop exhaustion.
 
 ## Identity flow — the core rule
 
@@ -44,7 +52,7 @@ another customer's rows even if the LLM asks — verified by
 | File | Owns |
 | --- | --- |
 | `agents/state.py` | `GraphState`: input, routing fields, `complexity`, `collected_facts`, outcomes |
-| `agents/supervisor.py` | Intent → routing JSON (next_agent/task/complexity) or `ask_user` clarification; iteration guard (3) |
+| `agents/supervisor.py` | Intent → routing JSON (next_agent/task/complexity), direct `respond` for non-task messages, or `ask_user` clarification; parse-failure fallback; iteration guard (3, exits gracefully) |
 | `agents/base.py` | `SpecialistAgent`: YAML prompt → LlmGateway call → tool loop via ToolGateway → facts into state |
 | `agents/specialists.py` | Policy / Billing / Claims / GeneralHelp — name + prompt + tool list each. Boundary: policy = contract, billing = money movement. FAQ retrieval is deterministic (pre-fetched, not an LLM tool choice) |
 | `agents/terminal.py` | `final_answer_node` (composes from collected_facts, discovers nothing) · `escalation_node` (writes a `cases` row post-Tranche A) |
