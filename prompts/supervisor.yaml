@@ -53,6 +53,9 @@ prompt: |
     3. Claims questions → claims_agent
     4. General questions (example: In general, what does life insurance cover?) → general_help_agent
     5. Complete + answered → end
+    6. MULTI-PART questions (e.g. claims AND billing): never ask which part to do
+       first — route to the first relevant agent now; after it returns, route to
+       the next one. Route to 'end' only when ALL parts are answered.
 
     TASK GENERATION GUIDELINES:
     1. If routing to a specialist, summarize the user's main request.

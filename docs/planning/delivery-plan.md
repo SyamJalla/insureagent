@@ -104,6 +104,7 @@ Personas are used as the "as a" actor wherever natural.
 | 2.4 | As Priya, I see responses stream in instead of waiting on a spinner. | SSE on the message endpoint; UI renders tokens | 📋 reg 3 |
 | 2.5 | As Sneha, the assistant knows my policy lapsed and explains revival. | Journey-phase data + phase-aware supervisor context | 🔨 |
 | 2.6 | As Meera, I can ask about my book of business and see only my policies' customers. | Agent-scope queries; cross-book access refused | 📋 (after reg 6) |
+| 2.7 | As a customer with a multi-part question, specialists run in parallel to cut latency. | Supervisor emits multiple targets; LangGraph Send fan-out behind `PARALLEL_AGENTS_ENABLED`; eval-gated flip. State is already parallel-safe (facts reducer, single-writer history) | 📋 after streaming + evals |
 
 ## Epic 3 — Story & Data (Tranche A) *(reg 27 extended)*
 

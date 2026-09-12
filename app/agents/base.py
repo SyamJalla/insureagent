@@ -101,11 +101,10 @@ class SpecialistAgent:
 
         answer = response.content or "I could not complete this task."
         logger.info("[%s] 🤖 %s done | answer=%r", ctx.correlation_id, self.name, answer[:100])
-        return {
-            "collected_facts": [f"[{self.name}] {answer}"],
-            "conversation_history": state.get("conversation_history", "")
-            + f"\n{self.name}: {answer}",
-        }
+        # Specialists write ONLY to collected_facts (append-reducer, parallel-safe).
+        # conversation_history has a single writer (the runner); the supervisor
+        # composes facts into its own view. Precondition for parallel fan-out.
+        return {"collected_facts": [f"[{self.name}] {answer}"]}
 
     def extra_fields(self, state: dict, ctx: RequestContext, tools) -> dict:
         """Per-agent prompt fields beyond task/history. Override as needed."""

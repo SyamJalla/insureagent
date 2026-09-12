@@ -77,10 +77,13 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
             ],
         }
 
-    system = render(
-        load_prompt("supervisor"),
-        conversation_history=state.get("conversation_history", ""),
-    )
+    # Compose the supervisor's view: user-side history (single writer: the
+    # runner) + this turn's agent findings (append-reducer, parallel-safe).
+    history = state.get("conversation_history", "")
+    facts = state.get("collected_facts") or []
+    if facts:
+        history += "\n[Agent findings this turn]\n" + "\n".join(facts)
+    system = render(load_prompt("supervisor"), conversation_history=history)
     response = llm.complete(
         LlmRequest(
             agent="supervisor_agent",

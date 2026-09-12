@@ -12,7 +12,8 @@ def _append(a: list, b: list) -> list:
 class GraphState(TypedDict, total=False):
     # Input & context
     user_input: str
-    conversation_history: str
+    conversation_history: str          # single writer: the runner. Specialists
+                                       # write only collected_facts (parallel-safe)
 
     # Supervisor routing (LLM proposes; the routing function decides)
     next_agent: str
