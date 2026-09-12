@@ -8,13 +8,13 @@ from app.auth.models import RequestContext
 from app.config import get_settings
 from app.conversations.models import Conversation, Message
 from app.conversations.service import ConversationNotFound, ConversationService
-from app.conversations.store import SqliteConversationStore
+from app.conversations.store import PostgresConversationStore
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
 def get_service() -> ConversationService:
-    store = SqliteConversationStore(get_settings().db_path)
+    store = PostgresConversationStore(get_settings().app_db_url)
     return ConversationService(store, AgentRunner())
 
 

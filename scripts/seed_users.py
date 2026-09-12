@@ -1,17 +1,19 @@
-"""Seed application users and policy-agent associations.
+"""Seed demo users and the demo agent's book of business — all in Postgres.
 
-Owns ALL schema extensions beyond utils.generate_sample_data():
-  - users table (identity for every role; see CONTEXT.md)
-  - policies.agent_id column (NULL = direct policy)
+Requires migrations + enterprise seed first (both applied automatically).
+Idempotent: safe to re-run.
 
-Idempotent: safe to re-run. Never modifies utils.py-owned tables' data.
 Run:  python scripts/seed_users.py
 """
-import sqlite3
 import sys
 from pathlib import Path
 
+import psycopg2
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "db"))
+
+from migrate import apply_migrations  # noqa: E402
 
 from app.auth.password import hash_password  # noqa: E402
 from app.config import get_settings  # noqa: E402
@@ -19,40 +21,27 @@ from app.config import get_settings  # noqa: E402
 DEMO_PASSWORD = "demo123"
 
 
-def pick_demo_customers(cur: sqlite3.Cursor) -> tuple[str, str]:
+def pick_demo_customers(cur) -> tuple[str, str]:
     """Return (customer with an active policy, customer with an open claim)."""
-    active = cur.execute(
+    cur.execute(
         "SELECT customer_id FROM policies WHERE status='active' ORDER BY policy_number LIMIT 1"
-    ).fetchone()[0]
-    claimant = cur.execute(
+    )
+    active = cur.fetchone()[0]
+    cur.execute(
         """SELECT p.customer_id FROM claims c JOIN policies p USING (policy_number)
-           WHERE c.status IN ('submitted','under_review') AND p.customer_id != ? LIMIT 1""",
+           WHERE c.status IN ('submitted','under_review') AND p.customer_id != %s LIMIT 1""",
         (active,),
-    ).fetchone()[0]
+    )
+    claimant = cur.fetchone()[0]
     return active, claimant
 
 
 def main() -> None:
-    db_path = get_settings().db_path
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
+    settings = get_settings()
+    apply_migrations(settings.app_db_url)
 
-    cur.execute(
-        """CREATE TABLE IF NOT EXISTS users (
-               user_id       TEXT PRIMARY KEY,
-               email         TEXT UNIQUE NOT NULL,
-               password_hash TEXT NOT NULL,
-               display_name  TEXT NOT NULL,
-               role          TEXT NOT NULL
-                   CHECK (role IN ('prospect','customer','agent','employee','admin')),
-               customer_id   TEXT REFERENCES customers(customer_id),
-               agent_id      TEXT,
-               created_at    TEXT NOT NULL DEFAULT (datetime('now'))
-           )"""
-    )
-    cols = [c[1] for c in cur.execute("PRAGMA table_info(policies)")]
-    if "agent_id" not in cols:
-        cur.execute("ALTER TABLE policies ADD COLUMN agent_id TEXT")
+    conn = psycopg2.connect(settings.app_db_url)
+    cur = conn.cursor()
 
     cust_active, cust_claim = pick_demo_customers(cur)
 
@@ -66,26 +55,21 @@ def main() -> None:
     ]
     pw = hash_password(DEMO_PASSWORD)
     cur.executemany(
-        """INSERT OR IGNORE INTO users
+        """INSERT INTO users
            (user_id, email, password_hash, display_name, role, customer_id, agent_id)
-           VALUES (?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (user_id) DO NOTHING""",
         [(uid, email, pw, name, role, cust, agt) for uid, email, name, role, cust, agt in users],
     )
 
-    # Give the demo agent a small book of business: 5 active policies.
-    cur.execute(
-        """UPDATE policies SET agent_id='AGT001' WHERE policy_number IN (
-               SELECT policy_number FROM policies
-               WHERE status='active' AND agent_id IS NULL ORDER BY policy_number LIMIT 5)"""
-    )
+    # Book of business is assigned by seed_enterprise.py (part of the data,
+    # not demo setup) — nothing to do here beyond linking the login.
     conn.commit()
 
-    for row in cur.execute(
-        "SELECT user_id, email, role, customer_id, agent_id FROM users ORDER BY user_id"
-    ):
+    cur.execute("SELECT user_id, email, role, customer_id, agent_id FROM users ORDER BY user_id")
+    for row in cur.fetchall():
         print(row)
-    book = cur.execute("SELECT COUNT(*) FROM policies WHERE agent_id='AGT001'").fetchone()[0]
-    print(f"AGT001 book of business: {book} policies")
+    cur.execute("SELECT COUNT(*) FROM policies WHERE agent_id = %s", ("AGT001",))
+    print(f"AGT001 book of business: {cur.fetchone()[0]} policies")
     print(f"All demo passwords: {DEMO_PASSWORD}")
     conn.close()
 

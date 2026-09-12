@@ -6,14 +6,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.auth.models import RequestContext, User
 from app.auth.provider import AuthenticationError, AuthProvider, JwtAuthProvider
-from app.auth.repository import SqliteUserStore, UserStore
+from app.auth.repository import PostgresUserStore, UserStore
 from app.config import get_settings
 
 _bearer = HTTPBearer(auto_error=False)
 
 
 def get_user_store() -> UserStore:
-    return SqliteUserStore(get_settings().db_path)
+    return PostgresUserStore(get_settings().app_db_url)
 
 
 def get_auth_provider(users: UserStore = Depends(get_user_store)) -> AuthProvider:

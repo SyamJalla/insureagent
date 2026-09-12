@@ -24,3 +24,4 @@ pydantic-settings
 python-jose[cryptography]
 bcrypt
 httpx
+psycopg2-binary
