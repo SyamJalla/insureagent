@@ -49,11 +49,18 @@ prompt: |
     1. If routing to a specialist, summarize the user's main request.
     2. Keep the policy number, customer ID, claim ID (if applicable and available) in Task also.
 
+    COMPLEXITY SCORING:
+    Rate the current request's complexity:
+    - "simple": single fact lookup or generic FAQ
+    - "standard": one domain, may need a tool call or two
+    - "complex": multi-domain, ambiguous, disputes, or high-stakes decisions
+
     Respond in JSON:
     {{
     "next_agent": "<agent_name or 'end'>",
     "task": "<concise task description>",
-    "justification": "<why this decision>"
+    "justification": "<why this decision>",
+    "complexity": "<simple|standard|complex>"
     }}
 
     Only use ask_user tool if absolutely necessary.
