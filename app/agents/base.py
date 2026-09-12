@@ -4,10 +4,13 @@ execute tool calls via ToolGateway (ctx from config, never from the LLM) →
 feed results back → land facts in state.
 """
 import json
+import logging
 from pathlib import Path
 
 import yaml
 from langchain_core.runnables import RunnableConfig
+
+logger = logging.getLogger("insureagent.agents")
 
 from app.auth.models import RequestContext
 from app.llm.models import LlmRequest
@@ -42,6 +45,10 @@ class SpecialistAgent:
 
     def __call__(self, state: dict, config: RunnableConfig) -> dict:
         ctx, llm, tools = _cfg(config)
+        logger.info(
+            "[%s] 🤖 %s start | task=%r",
+            ctx.correlation_id, self.name, state.get("task", "")[:100],
+        )
         system = render(
             load_prompt(self.prompt_name),
             task=state.get("task", state.get("user_input", "")),
@@ -79,6 +86,11 @@ class SpecialistAgent:
                 ],
             })
             for tc in response.tool_calls:
+                logger.info(
+                    "[%s] 🤖 %s → tool %s(%s)",
+                    ctx.correlation_id, self.name, tc.name,
+                    json.dumps(tc.arguments)[:120],
+                )
                 result = tools.invoke(ctx, tc.name, tc.arguments)
                 payload = result.data if result.ok else {"error": result.error}
                 messages.append({
@@ -88,6 +100,7 @@ class SpecialistAgent:
                 })
 
         answer = response.content or "I could not complete this task."
+        logger.info("[%s] 🤖 %s done | answer=%r", ctx.correlation_id, self.name, answer[:100])
         return {
             "collected_facts": [f"[{self.name}] {answer}"],
             "conversation_history": state.get("conversation_history", "")

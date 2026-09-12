@@ -5,9 +5,12 @@ the orchestrator's routing function decides. No tool-gateway access here —
 ask_user is a control-flow pseudo-tool, not a data tool.
 """
 import json
+import logging
 import re
 
 from langchain_core.runnables import RunnableConfig
+
+logger = logging.getLogger("insureagent.supervisor")
 
 from app.agents.base import load_prompt, render, _cfg
 from app.llm.models import Complexity, LlmRequest
@@ -54,7 +57,12 @@ def _parse_json(text: str) -> dict:
 def supervisor_node(state: dict, config: RunnableConfig) -> dict:
     ctx, llm, _tools = _cfg(config)
     n = state.get("n_iteration", 0) + 1
+    logger.info("[%s] 🧭 supervisor | iteration=%d", ctx.correlation_id, n)
     if n > MAX_ITERATIONS:
+        logger.warning(
+            "[%s] 🧭 iteration cap (%d) hit → final answer with human offer",
+            ctx.correlation_id, MAX_ITERATIONS,
+        )
         # Loop exhaustion is NOT an escalation trigger: hand what we have to the
         # final answer node, which acknowledges the limit and OFFERS a human.
         # Real escalation stays reserved for flagged reasons (explicit request,
@@ -88,6 +96,7 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
     for tc in response.tool_calls:
         if tc.name == "ask_user":
             question = tc.arguments.get("question", "Could you clarify your request?")
+            logger.info("[%s] 🧭 decision=clarify | question=%r", ctx.correlation_id, question[:100])
             return {
                 "n_iteration": n,
                 "clarification_question": question,
@@ -100,6 +109,10 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
     # in conversational prose, that prose IS the reply; otherwise a safe fallback.
     if not decision:
         prose = (response.content or "").strip()
+        logger.warning(
+            "[%s] 🧭 decision=no-JSON fallback → direct reply (%s)",
+            ctx.correlation_id, "prose" if prose else "canned",
+        )
         return {
             "n_iteration": n,
             "final_answer": prose or _FALLBACK_REPLY,
@@ -108,6 +121,9 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
 
     next_agent = decision.get("next_agent", "")
     if next_agent not in _VALID_AGENTS:
+        logger.warning(
+            "[%s] 🧭 decision=invalid agent %r → canned fallback", ctx.correlation_id, next_agent
+        )
         return {
             "n_iteration": n,
             "final_answer": _FALLBACK_REPLY,
@@ -117,6 +133,7 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
     # Direct response: small talk, capability questions, out-of-scope. The
     # supervisor is the answer; no specialist, no tools, straight to END.
     if next_agent == "respond":
+        logger.info("[%s] 🧭 decision=respond (direct, no specialist)", ctx.correlation_id)
         return {
             "n_iteration": n,
             "final_answer": decision.get("response") or _FALLBACK_REPLY,
@@ -127,6 +144,11 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
         complexity = Complexity(decision.get("complexity", "standard"))
     except ValueError:
         complexity = Complexity.STANDARD
+    logger.info(
+        "[%s] 🧭 decision=route → %s | complexity=%s | task=%r | why=%r",
+        ctx.correlation_id, next_agent, complexity.value,
+        decision.get("task", "")[:90], decision.get("justification", "")[:90],
+    )
     return {
         "n_iteration": n,
         "next_agent": next_agent,

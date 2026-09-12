@@ -1,12 +1,20 @@
 """Terminal nodes: final answer composition and human escalation."""
+import logging
+
 from langchain_core.runnables import RunnableConfig
 
 from app.agents.base import load_prompt, render, _cfg
 from app.llm.models import LlmRequest
 
+logger = logging.getLogger("insureagent.agents")
+
 
 def final_answer_node(state: dict, config: RunnableConfig) -> dict:
     ctx, llm, _tools = _cfg(config)
+    logger.info(
+        "[%s] ✍️ final_answer | composing from %d fact(s)",
+        ctx.correlation_id, len(state.get("collected_facts", [])),
+    )
     system = render(
         load_prompt("final_answer_agent"),
         user_query=state.get("user_input", ""),
@@ -28,6 +36,10 @@ def final_answer_node(state: dict, config: RunnableConfig) -> dict:
 
 def escalation_node(state: dict, config: RunnableConfig) -> dict:
     ctx, llm, _tools = _cfg(config)
+    logger.warning(
+        "[%s] 🚨 escalation | reason=%r",
+        ctx.correlation_id, state.get("escalation_reason", "supervisor decision"),
+    )
     system = render(
         load_prompt("human_escalation_agent"),
         task=state.get("task", state.get("user_input", "")),

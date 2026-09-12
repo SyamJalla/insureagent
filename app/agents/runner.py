@@ -5,8 +5,12 @@ LangGraph's config channel, never in LLM-visible state), invokes the graph,
 maps the outcome. utils.py is no longer imported anywhere.
 """
 from functools import lru_cache
+import logging
+import time
 
 from pydantic import BaseModel
+
+logger = logging.getLogger("insureagent.runner")
 
 from app.agents.orchestrator import build_graph
 from app.auth.models import RequestContext
@@ -50,6 +54,11 @@ def _render_history(ctx: RequestContext, history: list[Message], user_input: str
 
 class AgentRunner:
     def run(self, ctx: RequestContext, history: list[Message], user_input: str) -> AgentResult:
+        started = time.monotonic()
+        logger.info(
+            "[%s] ▶ request start | user=%s role=%s | input=%r",
+            ctx.correlation_id, ctx.user.user_id, ctx.user.role.value, user_input[:120],
+        )
         llm, tools = _gateways()
         state = {
             "user_input": user_input,
@@ -63,9 +72,20 @@ class AgentRunner:
             state,
             config={"configurable": {"ctx": ctx, "llm": llm, "tools": tools}},
         )
+        elapsed_ms = int((time.monotonic() - started) * 1000)
         if final.get("outcome") == "clarification":
+            logger.info(
+                "[%s] ◀ request end | outcome=clarification | %dms | question=%r",
+                ctx.correlation_id, elapsed_ms, final["clarification_question"][:100],
+            )
             return AgentResult(answer=final["clarification_question"], escalated=False)
-        return AgentResult(
+        result = AgentResult(
             answer=final.get("final_answer") or "Sorry, I could not generate a response.",
             escalated=bool(final.get("requires_human_escalation")),
         )
+        logger.info(
+            "[%s] ◀ request end | outcome=%s | iterations=%d | %dms | answer=%r",
+            ctx.correlation_id, final.get("outcome") or "answer",
+            final.get("n_iteration", 0), elapsed_ms, result.answer[:100],
+        )
+        return result

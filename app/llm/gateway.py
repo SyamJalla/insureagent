@@ -60,7 +60,7 @@ class LlmGateway:
                     correlation_id=correlation_id,
                 )
                 self.records.append(record)
-                logger.info("llm_call %s", record.model_dump_json())
+                logger.info("🧠 llm_call %s", record.model_dump_json())
                 return response
             tier = self._next_tier(tier)
             if tier is not None:

@@ -145,7 +145,7 @@ class ToolGateway:
             logger.exception("tool %s failed", name)
             result = ToolResult(tool=name, ok=False, error=f"tool error: {type(exc).__name__}")
         logger.info(
-            "tool_call %s",
+            "🔧 tool_call %s",
             json.dumps({
                 "correlation_id": ctx.correlation_id,
                 "user": ctx.user.user_id,
