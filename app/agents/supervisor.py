@@ -71,9 +71,11 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
             "n_iteration": n,
             "next_agent": "end",
             "collected_facts": [
-                "[system note] Iteration limit reached before the request was fully "
-                "resolved. Answer with what is known, acknowledge the limitation, "
-                "and offer to connect the user with a human specialist."
+                "[system note] Iteration limit reached. IMPORTANT: include ALL "
+                "concrete facts already gathered above (amounts, dates, statuses) "
+                "in your answer — do not discard them. Only the parts that were "
+                "NOT resolved should be described as incomplete, with an offer to "
+                "connect the user with a human specialist for those."
             ],
         }
 

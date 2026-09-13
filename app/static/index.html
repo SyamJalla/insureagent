@@ -46,6 +46,7 @@
   .fb button { border: 1px solid var(--line); background: none; border-radius: 6px;
                cursor: pointer; font-size: 12px; padding: 2px 8px; opacity: 0.6; }
   .fb button:hover { opacity: 1; }
+  .fb button:disabled { cursor: default; opacity: 0.35; }
   .fb button.sel { opacity: 1; background: var(--accent-soft); border-color: var(--accent); }
   .fb.done button { pointer-events: none; }
   #thinking { align-self: flex-start; color: var(--muted); font-size: 13px; display: none; }
@@ -170,21 +171,38 @@ function renderMessage(m) {
   if (m.sender === "assistant" && m.message_id) {
     const fb = document.createElement("div");
     fb.className = "fb";
+    const note = document.createElement("span");
+    note.style.cssText = "font-size:11px;color:var(--muted);align-self:center;";
+    const buttons = [];
+    let busy = false;
     for (const [label, rating] of [["👍", "up"], ["👎", "down"]]) {
       const b = document.createElement("button");
       b.type = "button";
       b.textContent = label;
       b.onclick = async () => {
+        if (busy) return;
+        busy = true;                                   // block double-clicks NOW
+        buttons.forEach((x) => (x.disabled = true));
+        note.textContent = "saving…";
         try {
           await api.call("POST",
             `/conversations/${m.conversation_id}/messages/${m.message_id}/feedback`,
             { rating });
+          buttons.forEach((x) => x.classList.remove("sel"));
           b.classList.add("sel");
-          fb.classList.add("done");
-        } catch (e) { /* feedback is best-effort */ }
+          note.textContent = "thanks for the feedback";
+          buttons.forEach((x) => (x.disabled = false)); // allow changing the vote
+          busy = false;
+        } catch (e) {
+          note.textContent = "couldn't save — try again";
+          buttons.forEach((x) => (x.disabled = false));
+          busy = false;
+        }
       };
+      buttons.push(b);
       fb.appendChild(b);
     }
+    fb.appendChild(note);
     el.appendChild(fb);
   }
   $("messages").appendChild(el);

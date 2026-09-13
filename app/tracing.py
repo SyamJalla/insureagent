@@ -121,14 +121,25 @@ class Tracer:
         except Exception:
             logger.exception("failed to finish trace")
 
-    def score(self, correlation_id: str, name: str, value: float, comment: str | None = None) -> None:
-        """Attach a score (e.g. user feedback) to the trace of a past request."""
+    def score(
+        self, correlation_id: str, name: str, value: float,
+        comment: str | None = None, idempotency_key: str | None = None,
+    ) -> None:
+        """Attach a score (e.g. user feedback) to the trace of a past request.
+
+        idempotency_key (e.g. the message_id) makes repeat submissions
+        OVERWRITE the same score instead of stacking duplicates."""
         if not self._client:
             return
         try:
             trace_id = self._client.create_trace_id(seed=correlation_id)
+            score_id = (
+                self._client.create_trace_id(seed=f"score:{name}:{idempotency_key}")
+                if idempotency_key else None
+            )
             self._client.create_score(
-                trace_id=trace_id, name=name, value=value, comment=comment
+                trace_id=trace_id, name=name, value=value,
+                comment=comment, score_id=score_id,
             )
             self._client.flush()
         except Exception:

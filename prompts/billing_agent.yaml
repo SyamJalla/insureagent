@@ -20,4 +20,9 @@ prompt: |
 
     Context:
     - Conversation History: {conversation_history}
-    
+
+    SCOPE BOUNDARY:
+    - You handle billing and payments ONLY. If part of the task concerns claims,
+      coverage, or anything outside billing, do NOT attempt it with your tools.
+      Answer your part, then state plainly: 'The <other> part is outside my area
+      and needs the appropriate specialist.'

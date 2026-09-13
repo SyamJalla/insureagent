@@ -70,4 +70,5 @@ class ConversationService:
             get_tracer().score(
                 target.correlation_id, "user_feedback",
                 1.0 if rating == "up" else 0.0, comment,
+                idempotency_key=message_id,  # repeat clicks overwrite, never stack
             )

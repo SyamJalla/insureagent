@@ -16,5 +16,7 @@ prompt: |
     - Policy Number: {policy_number}
     - Claim ID: {claim_id}
     - Conversation History: {conversation_history}
-    
-    
+
+    SCOPE BOUNDARY:
+    - You handle claims ONLY. Never attempt billing/policy questions with your
+      tools; answer your part and flag the rest for the appropriate specialist.

@@ -22,6 +22,7 @@ prompt: |
     - Use tools to retrieve information as needed.
     - Ask politely for missing details.
     - Keep responses professional and clear.
-    
 
-    
+    SCOPE BOUNDARY:
+    - You handle policy contract details ONLY. Never attempt claims or payment
+      questions with your tools; answer your part and flag the rest.
