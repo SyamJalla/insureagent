@@ -46,8 +46,8 @@ class LlmGateway:
                 except Exception as exc:  # provider/network errors: retry, then fall back
                     last_error = exc
                     logger.warning(
-                        "llm call failed (agent=%s model=%s attempt=%d): %s",
-                        request.agent, model, attempt, exc,
+                        "[%s] llm call failed (agent=%s model=%s attempt=%d): %s",
+                        correlation_id, request.agent, model, attempt, exc,
                     )
                     continue
                 record = CallRecord(
@@ -61,6 +61,15 @@ class LlmGateway:
                 )
                 self.records.append(record)
                 logger.info("🧠 llm_call %s", record.model_dump_json())
+                from app.tracing import get_tracer  # local import: avoid cycle at module load
+
+                get_tracer().log_generation(
+                    agent=request.agent, model=model, tier=tier.value,
+                    messages=request.messages,
+                    output=response.content or [tc.model_dump() for tc in response.tool_calls],
+                    input_tokens=response.input_tokens,
+                    output_tokens=response.output_tokens,
+                )
                 return response
             tier = self._next_tier(tier)
             if tier is not None:

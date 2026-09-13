@@ -5,10 +5,11 @@ implementation later, without callers changing.
 """
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
+import uuid
 
 from jose import JWTError, jwt
 
-from app.auth.models import TokenPair, User
+from app.auth.models import AuthenticatedToken, TokenPair, User
 from app.auth.password import verify_password
 from app.auth.repository import UserStore
 
@@ -23,8 +24,8 @@ class AuthProvider(ABC):
         """Verify credentials; return tokens. Raises AuthenticationError."""
 
     @abstractmethod
-    def validate_token(self, token: str) -> User:
-        """Resolve a bearer token to a User. Raises AuthenticationError."""
+    def validate_token(self, token: str) -> AuthenticatedToken:
+        """Resolve a bearer token to identity + login session. Raises AuthenticationError."""
 
 
 class JwtAuthProvider(AuthProvider):
@@ -42,11 +43,12 @@ class JwtAuthProvider(AuthProvider):
         claims = {
             "sub": user.user_id,
             "role": user.role.value,
+            "jti": uuid.uuid4().hex,  # login session id (also the future revocation hook)
             "exp": datetime.now(timezone.utc) + self._ttl,
         }
         return TokenPair(access_token=jwt.encode(claims, self._secret, algorithm=self._algorithm))
 
-    def validate_token(self, token: str) -> User:
+    def validate_token(self, token: str) -> AuthenticatedToken:
         try:
             claims = jwt.decode(token, self._secret, algorithms=[self._algorithm])
         except JWTError as exc:
@@ -54,4 +56,4 @@ class JwtAuthProvider(AuthProvider):
         user = self._users.get_by_id(claims["sub"])
         if user is None:
             raise AuthenticationError("unknown user")
-        return user
+        return AuthenticatedToken(user=user, session_id=claims.get("jti"))

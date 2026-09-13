@@ -1,4 +1,4 @@
-"""Identity and per-request context models. See CONTEXT.md for role semantics."""
+"""Identity and per-request context models. Role semantics: README domain model."""
 from enum import Enum
 
 from pydantic import BaseModel
@@ -24,12 +24,21 @@ class User(BaseModel):
 class RequestContext(BaseModel):
     """Who is asking. Built server-side per request; never from client input.
 
-    Flows downward only (API -> conversations -> agents -> tools). The future
-    tool-layer authorization reads this object.
+    Flows downward only (API -> conversations -> agents -> tools).
+    ID hierarchy: user_id (person) > session_id (login/JWT jti) >
+    conversation_id (thread) > correlation_id (one message turn).
     """
     user: User
     correlation_id: str
+    session_id: str | None = None       # JWT jti — one login session
+    conversation_id: str | None = None  # stamped by ConversationService
     owned_policy_numbers: list[str] = []
+
+
+class AuthenticatedToken(BaseModel):
+    """Result of validating a bearer token: identity + login session."""
+    user: User
+    session_id: str | None = None
 
 
 class TokenPair(BaseModel):

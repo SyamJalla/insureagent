@@ -155,6 +155,12 @@ class ToolGateway:
                 "ok": result.ok,
             }),
         )
+        from app.tracing import get_tracer  # local import: avoid cycle at module load
+
+        get_tracer().log_tool_call(
+            name=name, args=args, ok=result.ok,
+            output=result.data if result.ok else {"error": result.error},
+        )
         return result
 
     @staticmethod

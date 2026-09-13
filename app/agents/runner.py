@@ -17,6 +17,7 @@ from app.auth.models import RequestContext
 from app.conversations.models import Message
 from app.llm.gateway import build_default_gateway
 from app.tools.gateway import ToolGateway
+from app.tracing import get_tracer
 
 
 class AgentResult(BaseModel):
@@ -68,10 +69,30 @@ class AgentRunner:
             "requires_human_escalation": False,
             "outcome": "",
         }
-        final = _graph().invoke(
-            state,
-            config={"configurable": {"ctx": ctx, "llm": llm, "tools": tools}},
-        )
+        tracer = get_tracer()
+        try:
+            with tracer.request_trace(ctx, user_input):
+                final = _graph().invoke(
+                    state,
+                    config={"configurable": {"ctx": ctx, "llm": llm, "tools": tools}},
+                )
+                tracer.finish_request(
+                    final.get("outcome") or "answer",
+                    (final.get("final_answer") or final.get("clarification_question") or "")[:500],
+                )
+        except Exception:
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            logger.exception(
+                "[%s] ✖ request FAILED after %dms — returning graceful error",
+                ctx.correlation_id, elapsed_ms,
+            )
+            return AgentResult(
+                answer="Sorry — something went wrong on our side while handling that. "
+                "Please try again, or ask to speak with a person.",
+                escalated=False,
+            )
+        finally:
+            tracer.flush()
         elapsed_ms = int((time.monotonic() - started) * 1000)
         if final.get("outcome") == "clarification":
             logger.info(

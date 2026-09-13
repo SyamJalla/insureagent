@@ -29,6 +29,7 @@ class ConversationService:
     def send_message(self, ctx: RequestContext, conversation_id: str, content: str) -> Message:
         if self._store.get(conversation_id, ctx.user.user_id) is None:
             raise ConversationNotFound(conversation_id)
+        ctx.conversation_id = conversation_id  # completes the ID hierarchy for tracing
         limit = get_settings().history_message_limit
         history = self._store.get_messages(conversation_id, ctx.user.user_id, limit=limit)
 
