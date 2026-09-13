@@ -161,8 +161,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
       TZ: UTC
       PGTZ: UTC
-    ports:
-      - 127.0.0.1:5432:5432
+    # No host port mapping: this is Langfuse's INTERNAL db — the langfuse
+    # containers reach it over the docker network. The host's 5432 belongs to
+    # the native PostgreSQL (our app DB), and Windows also refused 5433.
     volumes:
       - langfuse_postgres_data:/var/lib/postgresql/data
 

@@ -55,7 +55,18 @@ class Tracer:
             yield None
             return
         try:
+            from langfuse import propagate_attributes
+
             trace_id = self._client.create_trace_id(seed=ctx.correlation_id)
+            attrs_cm = propagate_attributes(
+                user_id=ctx.user.user_id,
+                session_id=ctx.conversation_id or ctx.correlation_id,
+                tags=[ctx.user.role.value],
+                metadata={
+                    "correlation_id": ctx.correlation_id,
+                    "login_session": ctx.session_id or "",
+                },
+            )
             span_cm = self._client.start_as_current_observation(
                 name="chat_request",
                 as_type="span",
@@ -66,19 +77,7 @@ class Tracer:
             logger.exception("failed to open trace")
             yield None
             return
-        with span_cm as span:
-            try:
-                span.update_trace(
-                    user_id=ctx.user.user_id,
-                    session_id=ctx.conversation_id or ctx.correlation_id,
-                    tags=[ctx.user.role.value],
-                    metadata={
-                        "correlation_id": ctx.correlation_id,
-                        "login_session": ctx.session_id,
-                    },
-                )
-            except Exception:
-                logger.exception("failed to annotate trace")
+        with attrs_cm, span_cm as span:
             yield span
 
     def log_generation(
