@@ -86,6 +86,12 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
     if facts:
         history += "\n[Agent findings this turn]\n" + "\n".join(facts)
     system = render(load_prompt("supervisor"), conversation_history=history)
+    # Structural rule (LLMs reason; systems decide): clarification is only
+    # legitimate BEFORE any specialist has run this turn. Once facts exist,
+    # the identifiers were sufficient — remaining parts get ROUTED, so the
+    # ask_user tool is simply not offered mid-turn. (Fixes the observed
+    # failure of asking the user a question that belongs to a specialist.)
+    tools = [_ASK_USER_SPEC] if not facts else None
     response = llm.complete(
         LlmRequest(
             agent="supervisor_agent",
@@ -93,7 +99,7 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
                 {"role": "system", "content": system},
                 {"role": "user", "content": state.get("user_input", "")},
             ],
-            tools=[_ASK_USER_SPEC],
+            tools=tools,
         ),
         correlation_id=ctx.correlation_id,
     )

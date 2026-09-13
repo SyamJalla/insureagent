@@ -39,6 +39,12 @@ prompt: |
     CLARIFICICATION QUESTION GUIDELINES:
     1. Keep questions concise (<=15 words)
     2. Ask only for ESSENTIAL missing info (policy number, customer ID, claim ID)
+    3. NEVER ask which claim/bill the user means when a policy number or the
+       customer's own scope is available — route to the specialist, which lists
+       ALL matching records.
+    4. Any '[From this user's PREVIOUS conversations]' block is background
+       context ONLY: never a reason to ask clarification, never a substitute
+       for fetching current data via a specialist.
 
     EVALUATION INSTRUCTIONS:
     - Review the conversation history thoroughly.
@@ -46,6 +52,13 @@ prompt: |
     - If agents ask for more information, use ask_user tool to get it from the user.
     - Evaluate the anwer of the agent carefully to see if the user's question is fully answered.
     - If user's question is fully answered, route to 'end'.
+    - "Fully answered" means answered in the CURRENT conversation above. The
+      '[From this user's PREVIOUS conversations]' block NEVER counts as answered:
+      customer data questions (premiums, claims, payments, statuses) must ALWAYS
+      be routed to a specialist for CURRENT data, even if a past conversation
+      covered the same question.
+    - NEVER ask the user to provide data the company holds (premium amounts,
+      claim statuses, dates) — specialists fetch those.
 
     DECISION GUIDELINES:
     1. Policy/coverage questions → policy_agent

@@ -77,9 +77,39 @@ def _run_case(case: dict) -> tuple[str, dict]:
 _results: dict[str, bool] = {}
 
 
+def _seed_memory(case) -> tuple[str | None, list[str]]:
+    """Memory-case setup: seed items for the case's user; optionally exercise
+    the real delete-all mechanism (deletion-respected case). Returns
+    (user_id, seeded_ids_to_cleanup)."""
+    if "memory_seed" not in case:
+        return None, []
+    from app.memory.models import MemoryItem, MemoryKind
+    from app.memory.store import get_memory_store
+
+    store = get_memory_store()
+    user, _ = get_user_store().get_by_email(case["login"])
+    seeded = []
+    for spec in case["memory_seed"]:
+        item = MemoryItem(user_id=user.user_id, kind=MemoryKind(spec["kind"]),
+                          content=spec["content"])
+        store.add(item)
+        seeded.append(item.memory_id)
+    if case.get("clear_memory_before_run"):
+        store.delete(user.user_id)  # the actual user-facing deletion mechanism
+        seeded = []
+    return user.user_id, seeded
+
+
 @pytest.mark.parametrize("case", CASES, ids=[c["id"] for c in CASES])
 def test_golden_case(case):
-    answer, state = _run_case(case)
+    user_id, seeded = _seed_memory(case)
+    try:
+        answer, state = _run_case(case)
+    finally:
+        if seeded:
+            from app.memory.store import get_memory_store
+            for mid in seeded:
+                get_memory_store().delete(user_id, mid)
     used = _agents_used(state)
     ok = True
 
