@@ -22,6 +22,11 @@ class SendMessageRequest(BaseModel):
     content: str
 
 
+class FeedbackRequest(BaseModel):
+    rating: str  # "up" | "down"
+    comment: str | None = None
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def start_conversation(
     ctx: RequestContext = Depends(get_request_context),
@@ -48,6 +53,22 @@ def get_messages(
         return svc.history(ctx, conversation_id)
     except ConversationNotFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "conversation not found")
+
+
+@router.post("/{conversation_id}/messages/{message_id}/feedback", status_code=status.HTTP_204_NO_CONTENT)
+def message_feedback(
+    conversation_id: str,
+    message_id: str,
+    body: FeedbackRequest,
+    ctx: RequestContext = Depends(get_request_context),
+    svc: ConversationService = Depends(get_service),
+) -> None:
+    if body.rating not in ("up", "down"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "rating must be 'up' or 'down'")
+    try:
+        svc.record_feedback(ctx, conversation_id, message_id, body.rating, body.comment)
+    except ConversationNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
 
 
 @router.post("/{conversation_id}/messages")

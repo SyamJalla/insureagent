@@ -25,8 +25,10 @@ class _SafeDict(dict):
 
 
 def load_prompt(name: str) -> str:
-    with open(_PROMPTS_DIR / f"{name}.yaml", encoding="utf-8") as f:
-        return yaml.safe_load(f)["prompt"]
+    """Delegates to the configured PromptSource (file default, Langfuse optional)."""
+    from app.agents.prompt_source import get_prompt_source
+
+    return get_prompt_source().get(name)
 
 
 def render(template: str, **fields) -> str:

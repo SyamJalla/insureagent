@@ -1,4 +1,6 @@
 """ConversationService — orchestrates store + agent runner. No HTTP, no SQL."""
+import logging
+
 from app.agents.runner import AgentRunner
 from app.auth.models import RequestContext
 from app.config import get_settings
@@ -43,6 +45,29 @@ class ConversationService:
             sender="assistant",
             content=result.answer,
             escalated=result.escalated,
+            correlation_id=ctx.correlation_id,
         )
         self._store.append_message(reply, ctx.user.user_id)
         return reply
+
+    def record_feedback(
+        self, ctx: RequestContext, conversation_id: str, message_id: str,
+        rating: str, comment: str | None = None,
+    ) -> None:
+        """Attach user feedback to the message's Langfuse trace (via its
+        correlation_id). Ownership enforced by the store read."""
+        messages = self._store.get_messages(conversation_id, ctx.user.user_id, limit=200)
+        target = next((m for m in messages if m.message_id == message_id), None)
+        if target is None:
+            raise ConversationNotFound(conversation_id)
+        logging.getLogger("insureagent.feedback").info(
+            "👍👎 feedback | user=%s rating=%s message=%s corr=%s",
+            ctx.user.user_id, rating, message_id, target.correlation_id,
+        )
+        if target.correlation_id:
+            from app.tracing import get_tracer
+
+            get_tracer().score(
+                target.correlation_id, "user_feedback",
+                1.0 if rating == "up" else 0.0, comment,
+            )

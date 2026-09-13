@@ -42,6 +42,12 @@
   .msg.assistant { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
   .msg.escalated { border-color: var(--warn); background: var(--warn-soft); }
   .esc-tag { display: block; font-size: 11px; color: var(--warn); font-weight: 600; margin-bottom: 4px; }
+  .fb { margin-top: 6px; display: flex; gap: 6px; }
+  .fb button { border: 1px solid var(--line); background: none; border-radius: 6px;
+               cursor: pointer; font-size: 12px; padding: 2px 8px; opacity: 0.6; }
+  .fb button:hover { opacity: 1; }
+  .fb button.sel { opacity: 1; background: var(--accent-soft); border-color: var(--accent); }
+  .fb.done button { pointer-events: none; }
   #thinking { align-self: flex-start; color: var(--muted); font-size: 13px; display: none; }
   #composer { display: flex; gap: 8px; padding: 16px 24px; border-top: 1px solid var(--line); background: var(--panel); }
   #composer input { flex: 1; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; }
@@ -161,6 +167,26 @@ function renderMessage(m) {
     el.appendChild(tag);
   }
   el.appendChild(document.createTextNode(m.content));
+  if (m.sender === "assistant" && m.message_id) {
+    const fb = document.createElement("div");
+    fb.className = "fb";
+    for (const [label, rating] of [["👍", "up"], ["👎", "down"]]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      b.onclick = async () => {
+        try {
+          await api.call("POST",
+            `/conversations/${m.conversation_id}/messages/${m.message_id}/feedback`,
+            { rating });
+          b.classList.add("sel");
+          fb.classList.add("done");
+        } catch (e) { /* feedback is best-effort */ }
+      };
+      fb.appendChild(b);
+    }
+    el.appendChild(fb);
+  }
   $("messages").appendChild(el);
 }
 

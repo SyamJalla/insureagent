@@ -78,9 +78,13 @@ class PostgresConversationStore(ConversationStore):
             if cur.fetchone() is None:
                 raise KeyError("conversation not found for user")
             cur.execute(
-                "INSERT INTO messages VALUES (%s,%s,%s,%s,%s,%s)",
+                """INSERT INTO messages
+                   (message_id, conversation_id, sender, content, escalated,
+                    created_at, correlation_id)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (message.message_id, message.conversation_id, message.sender,
-                 message.content, message.escalated, message.created_at),
+                 message.content, message.escalated, message.created_at,
+                 message.correlation_id),
             )
             if message.sender == "user":
                 cur.execute(

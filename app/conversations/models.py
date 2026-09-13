@@ -20,6 +20,7 @@ class Message(BaseModel):
     sender: Literal["user", "assistant"]
     content: str
     escalated: bool = False
+    correlation_id: str | None = None   # request that produced it -> Langfuse trace
     created_at: datetime = Field(default_factory=_now)
 
 
