@@ -39,7 +39,7 @@ pip install -r requirements.txt
    ```
    OPENAI_API_KEY=sk-...
    JWT_SECRET=<openssl rand -hex 32>
-   APP_DB_URL=postgresql://postgres:root@localhost:5432/insureagent
+   APP_DB_URL=postgresql://postgres:root@localhost:5433/insureagent
    LANGFUSE_SECRET_KEY=sk-lf-...      # optional; tracing disabled without it
    LANGFUSE_PUBLIC_KEY=pk-lf-...
    LANGFUSE_BASE_URL=http://localhost:3000
@@ -147,7 +147,8 @@ orchestrator internals (graph, routing, tools): [docs/design/orchestrator.md](do
 
 - The graph is invoked synchronously per message (single worker blocks during LLM
   calls); fine for demo scale, revisit before load testing.
-- Langfuse tracing is not yet re-wired into the new agent layer (gateway logs only).
+- The full Langfuse Docker stack is memory-hungry; when developing without needing
+  traces, `docker compose stop` frees several GB (the app degrades gracefully).
 - Prompts are file-based YAML rather than versioned in Langfuse.
 - Complexity-based model routing is built but shipped OFF (`COMPLEXITY_ROUTING_ENABLED`);
   flip only alongside an eval run.
