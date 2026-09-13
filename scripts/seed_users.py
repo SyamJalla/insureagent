@@ -21,19 +21,37 @@ from app.config import get_settings  # noqa: E402
 DEMO_PASSWORD = "demo123"
 
 
-def pick_demo_customers(cur) -> tuple[str, str]:
-    """Return (customer with an active policy, customer with an open claim)."""
+def pick_demo_customers(cur) -> tuple[str, str, str, str]:
+    """Deterministic picks: (active policy, open claim, multi-policy,
+    cancelled+active) — one interesting customer per demo persona."""
     cur.execute(
         "SELECT customer_id FROM policies WHERE status='active' ORDER BY policy_number LIMIT 1"
     )
     active = cur.fetchone()[0]
     cur.execute(
         """SELECT p.customer_id FROM claims c JOIN policies p USING (policy_number)
-           WHERE c.status IN ('submitted','under_review') AND p.customer_id != %s LIMIT 1""",
+           WHERE c.status IN ('submitted','under_review') AND p.customer_id != %s
+           ORDER BY p.customer_id LIMIT 1""",
         (active,),
     )
     claimant = cur.fetchone()[0]
-    return active, claimant
+    cur.execute(
+        """SELECT customer_id FROM policies WHERE customer_id NOT IN (%s, %s)
+           GROUP BY customer_id
+           ORDER BY COUNT(*) DESC, COUNT(DISTINCT policy_type) DESC, customer_id
+           LIMIT 1 OFFSET 1""",  # offset 1 -> 6 policies across 3 types
+        (active, claimant),
+    )
+    multi = cur.fetchone()[0]
+    cur.execute(
+        """SELECT customer_id FROM policies WHERE customer_id NOT IN (%s, %s, %s)
+           GROUP BY customer_id
+           HAVING bool_or(status='cancelled') AND bool_or(status='active')
+           ORDER BY customer_id LIMIT 1""",
+        (active, claimant, multi),
+    )
+    cancelled = cur.fetchone()[0]
+    return active, claimant, multi, cancelled
 
 
 def main() -> None:
@@ -43,7 +61,7 @@ def main() -> None:
     conn = psycopg2.connect(settings.app_db_url)
     cur = conn.cursor()
 
-    cust_active, cust_claim = pick_demo_customers(cur)
+    cust_active, cust_claim, cust_multi, cust_cancelled = pick_demo_customers(cur)
 
     users = [
         ("USR001", "customer1@demo.local", "Demo Customer (active policy)", "customer", cust_active, None),
@@ -52,6 +70,8 @@ def main() -> None:
         ("USR004", "agent@demo.local", "Demo Agent", "agent", None, "AGT001"),
         ("USR005", "csr@demo.local", "Demo CSR", "employee", None, None),
         ("USR006", "admin@demo.local", "Demo Admin", "admin", None, None),
+        ("USR007", "customer3@demo.local", "Demo Customer (multi-policy)", "customer", cust_multi, None),
+        ("USR008", "customer4@demo.local", "Demo Customer (cancelled policy)", "customer", cust_cancelled, None),
     ]
     pw = hash_password(DEMO_PASSWORD)
     cur.executemany(
