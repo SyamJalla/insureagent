@@ -71,4 +71,6 @@ jobs:
       - name: Golden-set eval
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: pytest -m eval tests/eval -v
+          OPENBLAS_NUM_THREADS: "1"
+          OMP_NUM_THREADS: "1"
+        run: pytest -m eval tests/eval -q -p no:deepeval
