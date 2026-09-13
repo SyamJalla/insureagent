@@ -55,6 +55,14 @@ def _render_history(ctx: RequestContext, history: list[Message], user_input: str
 
 class AgentRunner:
     def run(self, ctx: RequestContext, history: list[Message], user_input: str) -> AgentResult:
+        result, _ = self.run_detailed(ctx, history, user_input)
+        return result
+
+    def run_detailed(
+        self, ctx: RequestContext, history: list[Message], user_input: str
+    ) -> tuple[AgentResult, dict]:
+        """run() plus the final graph state — used by the eval harness to
+        inspect which agents ran (collected_facts prefixes) and outcomes."""
         started = time.monotonic()
         logger.info(
             "[%s] ▶ request start | user=%s role=%s | input=%r",
@@ -90,7 +98,7 @@ class AgentRunner:
                 answer="Sorry — something went wrong on our side while handling that. "
                 "Please try again, or ask to speak with a person.",
                 escalated=False,
-            )
+            ), {"outcome": "error"}
         finally:
             tracer.flush()
         elapsed_ms = int((time.monotonic() - started) * 1000)
@@ -99,7 +107,7 @@ class AgentRunner:
                 "[%s] ◀ request end | outcome=clarification | %dms | question=%r",
                 ctx.correlation_id, elapsed_ms, final["clarification_question"][:100],
             )
-            return AgentResult(answer=final["clarification_question"], escalated=False)
+            return AgentResult(answer=final["clarification_question"], escalated=False), final
         result = AgentResult(
             answer=final.get("final_answer") or "Sorry, I could not generate a response.",
             escalated=bool(final.get("requires_human_escalation")),
@@ -109,4 +117,4 @@ class AgentRunner:
             ctx.correlation_id, final.get("outcome") or "answer",
             final.get("n_iteration", 0), elapsed_ms, result.answer[:100],
         )
-        return result
+        return result, final

@@ -1,0 +1,18 @@
+# Lean dependency set for CI (unit tests + seeding) — avoids the heavy
+# ML stack (torch/sentence-transformers/datasets) that runtime FAQ ingestion
+# needs but tests do not.
+fastapi
+httpx
+pytest
+pydantic-settings
+psycopg2-binary
+bcrypt
+python-jose[cryptography]
+langgraph
+langchain-core
+openai
+langfuse
+chromadb
+pyyaml
+numpy
+pandas

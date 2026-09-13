@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  APP_DB_URL: postgresql://postgres:root@localhost:5432/insureagent
+  JWT_SECRET: ci-only-secret
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'ci-dummy-key' }}
+
+jobs:
+  unit:
+    name: Lint + unit tests (no LLM calls)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: root
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements-ci.txt ruff
+      - name: Lint
+        run: ruff check app/ scripts/ tests/ --select E9,F63,F7,F82  # errors only for now
+      - name: Migrate + seed
+        run: |
+          python scripts/db/migrate.py
+          python scripts/seed_enterprise.py
+          python scripts/seed_users.py
+      - name: Unit tests
+        run: pytest -q
+
+  golden-eval:
+    # Real LLM calls — cost policy: merge to main / manual only, never per-PR.
+    name: Golden-set evaluation (LLM)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: unit
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: root
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements-ci.txt deepeval
+      - name: Migrate + seed
+        run: |
+          python scripts/db/migrate.py
+          python scripts/seed_enterprise.py
+          python scripts/seed_users.py
+      - name: Golden-set eval
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: pytest -m eval tests/eval -v

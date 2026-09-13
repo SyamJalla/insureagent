@@ -25,3 +25,4 @@ python-jose[cryptography]
 bcrypt
 httpx
 psycopg2-binary
+deepeval
