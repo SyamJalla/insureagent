@@ -48,7 +48,18 @@ class ConversationService:
             correlation_id=ctx.correlation_id,
         )
         self._store.append_message(reply, ctx.user.user_id)
+        self._summarize(ctx, conversation_id)
         return reply
+
+    def _summarize(self, ctx: RequestContext, conversation_id: str) -> None:
+        """Memory write path — never breaks the chat (guarded inside)."""
+        from app.agents.runner import _gateways
+        from app.memory.store import get_memory_store
+        from app.memory.summarizer import Summarizer
+
+        llm, _tools = _gateways()
+        messages = self._store.get_messages(conversation_id, ctx.user.user_id, limit=50)
+        Summarizer(get_memory_store(), llm).maybe_summarize(ctx, conversation_id, messages)
 
     def record_feedback(
         self, ctx: RequestContext, conversation_id: str, message_id: str,

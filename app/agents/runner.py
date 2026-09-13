@@ -69,9 +69,18 @@ class AgentRunner:
             ctx.correlation_id, ctx.user.user_id, ctx.user.role.value, user_input[:120],
         )
         llm, tools = _gateways()
+        conversation_history = _render_history(ctx, history, user_input)
+        from app.config import get_settings
+        if get_settings().memory_enabled:
+            from app.memory.retriever import memory_block
+            from app.memory.store import get_memory_store
+
+            block = memory_block(get_memory_store(), ctx, user_input)
+            if block:
+                conversation_history = block + "\n" + conversation_history
         state = {
             "user_input": user_input,
-            "conversation_history": _render_history(ctx, history, user_input),
+            "conversation_history": conversation_history,
             "n_iteration": 0,
             "collected_facts": [],
             "requires_human_escalation": False,

@@ -18,6 +18,7 @@ STATIC_TIERS: dict[str, ModelTier] = {
     "general_help_agent": ModelTier.FAST,
     "final_answer_agent": ModelTier.FAST,
     "human_escalation_agent": ModelTier.FAST,
+    "memory_summarizer": ModelTier.FAST,
 }
 DEFAULT_TIER = ModelTier.STANDARD
 

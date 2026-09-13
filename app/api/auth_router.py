@@ -35,3 +35,33 @@ def me(ctx: RequestContext = Depends(get_request_context)) -> dict:
         "user": ctx.user.model_dump(),
         "policy_count": len(ctx.owned_policy_numbers),
     }
+
+
+# --- Memory controls (policy: user can always view and hard-delete) ---------
+
+@router.get("/me/memory")
+def my_memory(ctx: RequestContext = Depends(get_request_context)) -> list[dict]:
+    from app.memory.store import get_memory_store
+
+    return [m.model_dump() for m in get_memory_store().list_for_user(ctx.user.user_id)]
+
+
+@router.delete("/me/memory", status_code=status.HTTP_200_OK)
+def clear_my_memory(ctx: RequestContext = Depends(get_request_context)) -> dict:
+    from app.memory.store import get_memory_store
+
+    removed = get_memory_store().delete(ctx.user.user_id)
+    logger.info("🧠 memory cleared | user=%s removed=%d", ctx.user.user_id, removed)
+    return {"removed": removed}
+
+
+@router.delete("/me/memory/{memory_id}", status_code=status.HTTP_200_OK)
+def delete_memory_item(
+    memory_id: str, ctx: RequestContext = Depends(get_request_context)
+) -> dict:
+    from app.memory.store import get_memory_store
+
+    removed = get_memory_store().delete(ctx.user.user_id, memory_id)
+    if removed == 0:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "memory item not found")
+    return {"removed": removed}

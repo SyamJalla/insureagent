@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # Flip only alongside an eval run — it changes cost/quality baselines.
     complexity_routing_enabled: bool = False
 
+    # Memory block (docs/design/memory.md): write path always on; the READ
+    # path (memory into prompts) ships dormant until golden cases exist.
+    memory_enabled: bool = False
+
     # Prompt source: "file" (prompts/*.yaml, git-reviewed) or "langfuse"
     # (Prompt Management with file fallback). Seed via scripts/push_prompts.py.
     prompt_source: str = "file"
