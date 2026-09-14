@@ -149,7 +149,11 @@ def load(conn, data: dict[str, pd.DataFrame]) -> None:
     )
 
     for table in ("customers", "policies", "auto_policy_details", "billing", "payments", "claims"):
-        df = data[table]
+        # Normalize pandas' NaN back to None so psycopg2 writes SQL NULL.
+        # (Some pandas versions convert None -> NaN in object columns, which
+        # otherwise reaches Postgres as the literal value 'NaN' and breaks
+        # the policies.agent_id foreign key on fresh setups.)
+        df = data[table].astype(object).where(pd.notnull(data[table]), None)
         cols = list(df.columns)
         rows = [tuple(r) for r in df.itertuples(index=False, name=None)]
         psycopg2.extras.execute_values(
