@@ -24,6 +24,12 @@ DEMO_PASSWORD = "demo123"
 def pick_demo_customers(cur) -> tuple[str, str, str, str]:
     """Deterministic picks: (active policy, open claim, multi-policy,
     cancelled+active) — one interesting customer per demo persona."""
+    cur.execute("SELECT COUNT(*) FROM policies")
+    if cur.fetchone()[0] == 0:
+        raise SystemExit(
+            "The policies table is empty — run `python scripts/seed_enterprise.py` "
+            "first (it must finish and print row counts), then re-run this script."
+        )
     cur.execute(
         "SELECT customer_id FROM policies WHERE status='active' ORDER BY policy_number LIMIT 1"
     )
