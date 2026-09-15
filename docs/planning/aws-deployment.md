@@ -137,3 +137,51 @@ day-one.
 4. HA + NAT when it stops being a demo; State 2 pieces as their features land
    (Cognito with auth hardening, Redis with the action loop, SQS with v2).
 5. State 3 only alongside register M3's testing gates.
+
+---
+
+## Traffic covered, and how cost evolves with it
+
+Unit of traffic: a **message turn** (one user message → one answer; ~5 turns ≈
+one conversation). Today a turn costs **$0.008–0.015 in LLM tokens** (2×
+gpt-4o supervisor calls + 3–4 mini calls + amortized summarizer) and occupies
+a worker for ~8–20 s (the graph is synchronous — capacity is workers, not CPU).
+
+| Tier | Traffic (per month) | Infra state that covers it | Infra ~$/mo | LLM tokens ~$/mo | Total ~$/mo | Bill is mostly… |
+| --- | --- | --- | --- | --- | --- | --- |
+| **T0 — team demo** | ~5 users · ~1.5k turns | State 1 lean (1 task) | 56 | 12–22 | **~70–80** | infra |
+| **T1 — pilot** | ~100 MAU · ~30k turns (≈1k/day) | State 1 proper (2 tasks + NAT) | ~125 | 240–450 | **~365–575** | tokens (2–4×) |
+| **T2 — growth** | ~1k MAU · ~300k turns | State 2 + 3–4 tasks, RDS medium | ~260–320 | 2,400–4,500 | **~2.7k–4.8k** | tokens (~90%) |
+| **T3 — scale** | ~10k MAU · ~3M turns | State 3, 10+ tasks, RDS large Multi-AZ | ~1,000–1,500 | 24k–45k naive → **12k–25k optimized** | **~13k–27k** | tokens (~95%) |
+
+**The shape of the curve:** infrastructure is *step-wise and small* (add a
+task, bump an RDS class — tens of dollars per step); tokens are *linear in
+traffic and dominate from the pilot tier onward*. The crossover where tokens
+overtake infra sits around **~10–15k turns/month** (~350–500/day). Every
+scaling conversation after T1 is really a token-cost conversation.
+
+**Capacity limits per state (what forces the next step):**
+- State 1, 1 task × 2 workers: ~5–10 *concurrent* conversations before turns
+  queue — fine to ~50k turns/mo with mild peaks.
+- The synchronous graph is the real ceiling: before T2, **streaming/async
+  (story 2.4)** stops being UX polish and becomes capacity engineering.
+- NAT data processing, ALB LCUs and CloudWatch ingest all grow with traffic
+  but stay single-digit % of the bill; DynamoDB/SQS on-demand scale to
+  near-zero marginal cost at these tiers.
+
+**Token-cost levers, in the order to pull them** (T2 is when they're
+mandatory, worth ~40–60% combined):
+1. **Complexity routing flag ON** — simple turns stop paying gpt-4o supervisor
+   prices (the largest single line: supervisor calls are ~80% of turn cost).
+2. **Prompt diet** — the supervisor prompt re-sends full history every
+   iteration; summarized history (memory summaries replacing raw turns) trims
+   input tokens on long conversations.
+3. **FAQ/direct-response short-circuits** — small-talk already skips
+   specialists; cached FAQ answers can skip generation for repeat questions
+   (per-user-safe: FAQ content is customer-independent).
+4. **Provider negotiation** — batch/committed-use pricing, or the Bedrock
+   comparison (decision D1) with real volume numbers in hand.
+
+CallRecords already meter tokens per agent/tier per request, so every one of
+these levers is measurable in Langfuse before and after — the same
+eval-then-flip discipline as every other change.
