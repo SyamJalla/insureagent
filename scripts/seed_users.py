@@ -57,7 +57,15 @@ def pick_demo_customers(cur) -> tuple[str, str, str, str]:
         (active, claimant, multi),
     )
     cancelled = cur.fetchone()[0]
-    return active, claimant, multi, cancelled
+    cur.execute(
+        """SELECT p.customer_id FROM billing b JOIN policies p USING (policy_number)
+           WHERE b.status = 'overdue' AND p.customer_id NOT IN (%s, %s, %s, %s)
+           GROUP BY p.customer_id
+           ORDER BY COUNT(*) DESC, p.customer_id LIMIT 1""",
+        (active, claimant, multi, cancelled),
+    )
+    overdue = cur.fetchone()[0]
+    return active, claimant, multi, cancelled, overdue
 
 
 def main() -> None:
@@ -67,7 +75,7 @@ def main() -> None:
     conn = psycopg2.connect(settings.app_db_url)
     cur = conn.cursor()
 
-    cust_active, cust_claim, cust_multi, cust_cancelled = pick_demo_customers(cur)
+    cust_active, cust_claim, cust_multi, cust_cancelled, cust_overdue = pick_demo_customers(cur)
 
     users = [
         ("USR001", "customer1@demo.local", "Demo Customer (active policy)", "customer", cust_active, None),
@@ -78,6 +86,7 @@ def main() -> None:
         ("USR006", "admin@demo.local", "Demo Admin", "admin", None, None),
         ("USR007", "customer3@demo.local", "Demo Customer (multi-policy)", "customer", cust_multi, None),
         ("USR008", "customer4@demo.local", "Demo Customer (cancelled policy)", "customer", cust_cancelled, None),
+        ("USR009", "customer5@demo.local", "Demo Customer (overdue bills)", "customer", cust_overdue, None),
     ]
     pw = hash_password(DEMO_PASSWORD)
     cur.executemany(
