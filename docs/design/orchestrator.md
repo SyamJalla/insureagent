@@ -78,7 +78,8 @@ another customer's rows even if the LLM asks — verified by
 
 1. Synchronous invocation — no streaming yet.
 2. Iteration cap of 3 — inherited; tune with evals.
-3. Langfuse tracing not yet re-wired into the new layer (CallRecords + audit
-   lines log locally; hook Langfuse at the two gateways — one place each).
-4. `utils.py` is now unreferenced — retirement/deletion is a separate commit
+3. `utils.py` is now unreferenced — retirement/deletion is a separate commit
    pending Jayanth's review.
+
+(Langfuse tracing IS wired since the observability sprint: traces/generations/
+tool spans at the two gateways + runner, feedback scores, golden-set evals.)
