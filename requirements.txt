@@ -1,28 +1,25 @@
-datasets
-pandas
-chromadb
-langgraph
-langchain-openai
-langchain-community
-duckduckgo-search
-beautifulsoup4
-requests
-python-dotenv
-tiktoken
-sentence_transformers
-scikit-learn
-seaborn
-matplotlib
-#arize-phoenix-otel
-#openinference-instrumentation-openai
-langfuse
-#langfuse-openai
-pyyaml
+# --- Runtime (the app) ---
 fastapi
 uvicorn
 pydantic-settings
 python-jose[cryptography]
 bcrypt
-httpx
 psycopg2-binary
+langgraph            # pulls langchain-core
+openai
+langfuse
+chromadb             # embeddings via Chroma's built-in ONNX MiniLM
+pyyaml
+
+# --- Scripts (seeding) ---
+pandas
+numpy
+
+# --- FAQ store build only (create_vectordb.py) ---
+datasets
+tqdm
+
+# --- Tests & golden-set eval (local dev) ---
+pytest
+httpx                # FastAPI TestClient
 deepeval
