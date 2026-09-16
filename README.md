@@ -11,7 +11,10 @@ for *their own* policies without ever typing a policy number.
 Specialist agents answer from two local data sources: a **PostgreSQL** database (synthetic
 customer/policy/claim/billing records plus users and conversations), and a **ChromaDB**
 vector collection of insurance FAQs (RAG for general knowledge only — never customer
-data). LLM calls go to OpenAI; traces to a self-hosted **Langfuse**.
+data). The assistant also **remembers users across conversations**: episodic and semantic
+memory lives in Postgres (`memory_items`, the source of truth) with a Chroma index
+(`user_memory`), is injected into prompts as context, and is user-viewable and deletable
+via `/me/memory`. LLM calls go to OpenAI; traces to a self-hosted **Langfuse**.
 
 ## What this is NOT
 
@@ -40,6 +43,7 @@ pip install -r requirements.txt
    OPENAI_API_KEY=sk-...
    JWT_SECRET=<openssl rand -hex 32>
    APP_DB_URL=postgresql://postgres:root@localhost:5433/insureagent
+   MEMORY_ENABLED=true                # long-term memory read path (write path is always on)
    LANGFUSE_SECRET_KEY=sk-lf-...      # optional; tracing disabled without it
    LANGFUSE_PUBLIC_KEY=pk-lf-...
    LANGFUSE_BASE_URL=http://localhost:3000
@@ -115,13 +119,13 @@ Frontend (static chat page — pure API consumer, JWT only)
    ↓
 API layer (FastAPI: auth, conversations; middleware builds RequestContext)
    ↓
-Conversation service (sessions, history, context assembly)
+Conversation service (sessions, history, context assembly, memory summarizer)
    ↓
 Agent layer (LangGraph: supervisor → specialists → final answer)
    ↓                                    ↘ LLM gateway (model tiers, cost, retries)
 Tool gateway (RBAC + ownership scoping in SQL — "LLMs reason; systems decide")
    ↓
-PostgreSQL (all data) · ChromaDB (FAQ RAG) · OpenAI · Langfuse
+PostgreSQL (all data) · ChromaDB (FAQ RAG + memory index) · OpenAI · Langfuse
 ```
 
 Each layer knows only the one below it. `RequestContext` (who is asking: user, role,
@@ -133,12 +137,12 @@ docstrings under `app/agents/` — start at `orchestrator.py` and `runner.py`.
 
 | Path | Contents |
 | --- | --- |
-| `app/` | The application package: `api/` routers, `auth/`, `conversations/`, `agents/` (supervisor, specialists, orchestrator, runner), `tools/` (gateway + tools, RBAC/ownership), `llm/` (model gateway + router), `static/` chat UI, `config.py`. |
+| `app/` | The application package: `api/` routers, `auth/`, `conversations/`, `agents/` (supervisor, specialists, orchestrator, runner), `tools/` (gateway + tools, RBAC/ownership), `llm/` (model gateway + router), `memory/` (store, summarizer, retriever), `tracing.py` (Langfuse), `static/` chat UI, `config.py`. |
 | `scripts/` | `db/migrate.py` + `db/migrations/*.sql` (all DDL), `seed_enterprise.py` (synthetic data), `seed_users.py` (demo accounts). |
 | `create_vectordb.py` | Builds/rebuilds the FAQ vector store (drop + re-ingest, deterministic; run with the app stopped). |
 | `prompts/` | One YAML prompt file per agent. |
 | `datasources/` | Chroma vector store (FAQ + user-memory embeddings). Git-ignored: derived/user data. |
-| `docs/` | Reference architecture diagram only (docs live in git history / team drive). |
+| `docs/` | Reference architecture diagram. |
 | `docker-compose.yml` | Self-hosted Langfuse stack for tracing. |
 
 ## Known rough edges
@@ -147,6 +151,8 @@ docstrings under `app/agents/` — start at `orchestrator.py` and `runner.py`.
   calls); fine for demo scale, revisit before load testing.
 - The full Langfuse Docker stack is memory-hungry; when developing without needing
   traces, `docker compose stop` frees several GB (the app degrades gracefully).
-- Prompts are file-based YAML rather than versioned in Langfuse.
-- Complexity-based model routing is built but shipped OFF (`COMPLEXITY_ROUTING_ENABLED`);
+- Prompt source is a flag (`PROMPT_SOURCE`): `file` (default, prompts/*.yaml) or
+  `langfuse` (Prompt Management, with file fallback; seed via `scripts/push_prompts.py`).
+- Complexity-based model routing is built but OFF (`COMPLEXITY_ROUTING_ENABLED`);
   flip only alongside an eval run.
+- Tool calls have no timeouts yet — needed before any real deployment.
