@@ -19,8 +19,8 @@ data). LLM calls go to OpenAI; traces to a self-hosted **Langfuse**.
   password printed by the seed script.
 - Not yet streaming or proactive — responses arrive whole; the platform never
   initiates contact. Both are planned phases.
-- Not deployed — everything runs locally; Cognito/Postgres/cloud are later swap-ins
-  behind existing interfaces (see [docs/design/phase1-backbone.md](docs/design/phase1-backbone.md)).
+- Not deployed — everything runs locally; Cognito/cloud services are later swap-ins
+  behind the existing store/provider interfaces.
 
 ## Environment
 
@@ -126,8 +126,8 @@ PostgreSQL (all data) · ChromaDB (FAQ RAG) · OpenAI · Langfuse
 
 Each layer knows only the one below it. `RequestContext` (who is asking: user, role,
 owned policies — resolved server-side from the JWT) flows downward on every request.
-Full design: [docs/design/phase1-backbone.md](docs/design/phase1-backbone.md) ·
-orchestrator internals (graph, routing, tools): [docs/design/orchestrator.md](docs/design/orchestrator.md).
+Orchestrator internals (graph, routing, tools) are documented in the module
+docstrings under `app/agents/` — start at `orchestrator.py` and `runner.py`.
 
 ## Layout
 
@@ -138,7 +138,7 @@ orchestrator internals (graph, routing, tools): [docs/design/orchestrator.md](do
 | `create_vectordb.py` | Builds/rebuilds the FAQ vector store (drop + re-ingest, deterministic; run with the app stopped). |
 | `prompts/` | One YAML prompt file per agent. |
 | `datasources/` | Chroma vector store (FAQ + user-memory embeddings). Git-ignored: derived/user data. |
-| `docs/` | Design docs (`design/`), planning, architecture review. |
+| `docs/` | Reference architecture diagram only (docs live in git history / team drive). |
 | `docker-compose.yml` | Self-hosted Langfuse stack for tracing. |
 
 ## Known rough edges

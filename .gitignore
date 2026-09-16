@@ -61,6 +61,3 @@ desktop.ini
 # Office lock files
 ~$*
 **/~$*
-
-# Large archives do not belong in git
-docs/meeting-docs/code_repos/
