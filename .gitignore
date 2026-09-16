@@ -33,8 +33,10 @@ htmlcov/
 .ipynb_checkpoints/
 .ipython/
 
-# --- Vector store (regenerate with create_vectordb.py) ---
-chroma_db*/
+# --- Data stores: derived + local only, never in git ---
+# FAQ vector store rebuilds via create_vectordb.py; user-memory embeddings
+# are user data (source of truth: Postgres memory_items).
+datasources/
 
 # --- Local databases ---
 *.db

@@ -134,13 +134,11 @@ orchestrator internals (graph, routing, tools): [docs/design/orchestrator.md](do
 | Path | Contents |
 | --- | --- |
 | `app/` | The application package: `api/` routers, `auth/`, `conversations/`, `agents/` (supervisor, specialists, orchestrator, runner), `tools/` (gateway + tools, RBAC/ownership), `llm/` (model gateway + router), `static/` chat UI, `config.py`. |
-| `utils.py` | Retired POC (unreferenced) — kept for review; deletion is a pending commit. |
 | `scripts/` | `db/migrate.py` + `db/migrations/*.sql` (all DDL), `seed_enterprise.py` (synthetic data), `seed_users.py` (demo accounts). |
-| `create_vectordb.py` | One-time setup: FAQ vector store. |
+| `create_vectordb.py` | Builds/rebuilds the FAQ vector store (drop + re-ingest, deterministic; run with the app stopped). |
 | `prompts/` | One YAML prompt file per agent. |
-| `datasources/` | Chroma vector store (and the obsolete pre-migration SQLite file). Git-ignored. |
-| `docs/` | Design docs (`design/`), future ADRs (`adr/`). |
-| `notes/` | Team notes, target architecture, work split. |
+| `datasources/` | Chroma vector store (FAQ + user-memory embeddings). Git-ignored: derived/user data. |
+| `docs/` | Design docs (`design/`), planning, architecture review. |
 | `docker-compose.yml` | Self-hosted Langfuse stack for tracing. |
 
 ## Known rough edges
