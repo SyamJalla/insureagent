@@ -1,4 +1,5 @@
-"""Memory contracts — see docs/design/memory.md for the policy (D3)."""
+"""Memory contracts: episodic items expire (TTL), semantic items persist;
+memory is context for prompts, never authority over the database."""
 from datetime import datetime, timezone
 from enum import Enum
 import uuid

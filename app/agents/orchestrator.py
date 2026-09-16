@@ -1,7 +1,8 @@
 """Graph assembly. Hub-and-spoke supervisor loop with three first-class
 outcomes: answer | clarification | escalation.
 
-Node names match the retired POC graph (and prompts/router tier keys).
+Node names are contract keys: they must match prompts/*.yaml filenames and
+the router's tier map (app/llm/router.py).
 """
 from langgraph.graph import END, StateGraph
 

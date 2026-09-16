@@ -2,7 +2,7 @@
 
 Builds per-request state + config (RequestContext and both gateways travel in
 LangGraph's config channel, never in LLM-visible state), invokes the graph,
-maps the outcome. utils.py is no longer imported anywhere.
+maps the outcome.
 """
 from functools import lru_cache
 import logging

@@ -20,7 +20,7 @@ from app.memory.models import MemoryItem, MemoryKind
 
 logger = logging.getLogger("insureagent.memory")
 
-EPISODIC_TTL_DAYS = 180  # policy: docs/design/memory.md §1
+EPISODIC_TTL_DAYS = 180  # episodic memories expire; semantic ones persist
 
 
 class MemoryStore(ABC):

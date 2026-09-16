@@ -1,8 +1,7 @@
 """Seed the enterprise tables in Postgres with deterministic synthetic data.
 
-Owns the data generation formerly in utils.generate_sample_data() — moved here
-so utils.py holds agents/tools/graph only. random_state=42 reproduces the same
-customer/policy IDs on every machine, so demo-user links stay valid.
+The single owner of synthetic data generation. random_state=42 reproduces the
+same customer/policy IDs on every machine, so demo-user links stay valid.
 
 Full reload each run (delete + insert, FK-safe order). Requires migrations:
 run scripts/db/migrate.py first (this script does it for you).
@@ -34,7 +33,8 @@ AGENTS = [
 
 
 def generate_sample_data(random_state: int = 42) -> dict[str, pd.DataFrame]:
-    """Identical logic (and RNG sequence) to the retired utils version."""
+    """Deterministic generator — append new randomness AFTER existing calls,
+    or every previously generated ID shifts and demo-user links break."""
     random.seed(random_state)
     np.random.seed(random_state)
 

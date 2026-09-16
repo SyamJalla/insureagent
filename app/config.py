@@ -40,8 +40,8 @@ class Settings(BaseSettings):
     # Flip only alongside an eval run — it changes cost/quality baselines.
     complexity_routing_enabled: bool = False
 
-    # Memory block (docs/design/memory.md): write path always on; the READ
-    # path (memory into prompts) ships dormant until golden cases exist.
+    # Memory block: the write path (summarizer → memory_items) is always on;
+    # this flag gates the READ path (memory injected into prompts).
     memory_enabled: bool = False
 
     # Prompt source: "file" (prompts/*.yaml, git-reviewed) or "langfuse"

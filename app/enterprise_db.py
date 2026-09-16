@@ -33,7 +33,7 @@ def enterprise_connection() -> Iterator[psycopg2.extensions.connection]:
 
 
 def _jsonable(value: Any) -> Any:
-    """Normalize DB types to what the SQLite-era tools produced (JSON-safe)."""
+    """Normalize DB types to JSON-safe primitives (Decimal→float, dates→ISO)."""
     if isinstance(value, Decimal):
         return float(value)
     if isinstance(value, (date, datetime)):
