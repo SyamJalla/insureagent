@@ -1,11 +1,8 @@
 """User persistence. The only module that reads the users table.
 
-Identity lives in Postgres (app-owned store). Policy ownership is looked up in
-the SQLite enterprise stand-in until the tool layer migrates business data.
+Identity and policy ownership both live in Postgres (since migration 002).
 """
 from abc import ABC, abstractmethod
-import sqlite3
-from pathlib import Path
 
 import psycopg2
 import psycopg2.extras
@@ -64,33 +61,4 @@ class PostgresUserStore(UserStore):
                 "SELECT policy_number FROM policies WHERE customer_id = %s", (customer_id,)
             )
             rows = cur.fetchall()
-        return [r["policy_number"] for r in rows]
-
-
-class SqliteUserStore(UserStore):
-    """Legacy single-file implementation; kept for tests/fallback."""
-
-    def __init__(self, db_path: Path):
-        self._db_path = db_path
-
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    def get_by_email(self, email: str) -> tuple[User, str] | None:
-        with self._connect() as conn:
-            row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-        return (_to_user(row), row["password_hash"]) if row else None
-
-    def get_by_id(self, user_id: str) -> User | None:
-        with self._connect() as conn:
-            row = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        return _to_user(row) if row else None
-
-    def policy_numbers_for_customer(self, customer_id: str) -> list[str]:
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT policy_number FROM policies WHERE customer_id = ?", (customer_id,)
-            ).fetchall()
         return [r["policy_number"] for r in rows]

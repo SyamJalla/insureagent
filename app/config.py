@@ -23,12 +23,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: int = 60
 
-    # Data sources
-    # App-owned stores (users, conversations, messages) live in Postgres.
-    # The synthetic insurance data stays in SQLite (the stand-in "enterprise
-    # system") until the tool layer migrates it.
+    # Data sources — all app-owned and enterprise data lives in Postgres;
+    # the vector store holds the FAQ + user-memory embeddings (Chroma).
     app_db_url: str = "postgresql://postgres:root@localhost:5432/insureagent"
-    db_path: Path = Path("datasources/database/insurance_support.db")
     vector_db_path: Path = Path("datasources/vector_database")
     faq_collection_name: str = "insurance_data_FAQ_collection"
 
