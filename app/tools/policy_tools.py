@@ -46,6 +46,7 @@ def list_my_policies(ctx: RequestContext):
         return {"error": "Use a specific customer or policy lookup"}
     return fetch_all(
         "SELECT p.policy_number, p.policy_type, p.status, p.premium_amount, "
-        "p.billing_frequency, p.start_date FROM policies p WHERE 1=1" + clause,
+        "p.billing_frequency, p.start_date, p.next_premium_date "
+        "FROM policies p WHERE 1=1" + clause,
         params,
     )

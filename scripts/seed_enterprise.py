@@ -94,9 +94,15 @@ def generate_sample_data(random_state: int = 42) -> dict[str, pd.DataFrame]:
         "policy_number": [random.choice(policies["policy_number"]) for _ in range(5000)],
         "billing_date": [datetime(2024, 1, 1) + timedelta(days=random.randint(0, 90)) for _ in range(5000)],
         "due_date": [datetime(2024, 1, 15) + timedelta(days=random.randint(0, 90)) for _ in range(5000)],
-        "amount_due": [round(random.uniform(100, 1000), 2) for _ in range(5000)],
+        "principal_amount": [round(random.uniform(100, 1000), 2) for _ in range(5000)],
         "status": [random.choice(["paid", "pending", "overdue"]) for _ in range(5000)],
     })
+    # Derived (no RNG): overdue bills carry a 5% late-payment penalty.
+    # total_due is a generated column in Postgres — never inserted.
+    billing["penalty_amount"] = [
+        round(p * 0.05, 2) if s == "overdue" else 0.0
+        for p, s in zip(billing["principal_amount"], billing["status"])
+    ]
 
     payments = pd.DataFrame({
         "payment_id": [f"PAY{str(i).zfill(6)}" for i in range(1, 4001)],
@@ -125,6 +131,24 @@ def generate_sample_data(random_state: int = 42) -> dict[str, pd.DataFrame]:
     policies["agent_id"] = [
         random.choice(agent_ids) if random.random() < 0.6 else None
         for _ in range(len(policies))
+    ]
+
+    # Derived (no RNG): next premium due date — the first billing-cycle date
+    # after today, cycling from start_date. NULL for non-active policies.
+    step_months = {"monthly": 1, "quarterly": 3, "annual": 12}
+    today = datetime.now()
+
+    def _next_premium(start: datetime, freq: str, status: str):
+        if status != "active":
+            return None
+        d = start
+        while d <= today:
+            d += pd.DateOffset(months=step_months[freq])
+        return d.date()
+
+    policies["next_premium_date"] = [
+        _next_premium(s, f, st)
+        for s, f, st in zip(policies["start_date"], policies["billing_frequency"], policies["status"])
     ]
 
     return {
