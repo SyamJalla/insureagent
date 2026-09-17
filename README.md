@@ -112,6 +112,20 @@ An imaginary insurer; all data synthetic. The rules that shape the code:
 - **RAG boundary:** vector store holds general knowledge only; customer-specific facts
   come from the database, always.
 
+### Data model (the company's structure)
+
+Six enterprise tables tell the insurer's story: `customers` (who buys) →
+`policies` (the contracts: type, status, premium, `next_premium_date` — the
+**source of truth for premium facts**) → `auto_policy_details` (vehicle +
+coverage, auto only) · `billing` (amounts owed: principal + late-payment
+penalty, `total_due` computed by the database) → `payments` · `claims` ·
+`agents` (partner channel; `policies.agent_id`, NULL = direct). Alongside
+them, app-owned tables: `users` (logins, any role), `conversations`/`messages`,
+and `memory_items`. Authoritative DDL, constraints, and the design notes
+behind each table live in `scripts/db/migrations/*.sql` (002 = enterprise
+core, 005 = premium/billing ownership split); synthetic rows come from
+`scripts/seed_enterprise.py`, deterministic under seed 42.
+
 ## Architecture
 
 ```
