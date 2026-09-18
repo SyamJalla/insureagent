@@ -28,6 +28,10 @@ class LlmGateway:
     def _model_for(self, tier: ModelTier) -> str:
         return self._models[tier]
 
+    def moderate(self, text: str):
+        """Pass-through to the provider's moderation endpoint (guardrails)."""
+        return self._provider.moderate(text)
+
     @staticmethod
     def _next_tier(tier: ModelTier) -> ModelTier | None:
         order = [ModelTier.FAST, ModelTier.STANDARD, ModelTier.REASONING]

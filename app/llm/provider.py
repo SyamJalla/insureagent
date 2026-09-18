@@ -8,12 +8,16 @@ import json
 
 from openai import OpenAI
 
-from app.llm.models import LlmRequest, LlmResponse, ToolCall
+from app.llm.models import LlmRequest, LlmResponse, ModerationScores, ToolCall
 
 
 class LlmProvider(ABC):
     @abstractmethod
     def complete(self, request: LlmRequest, model: str) -> LlmResponse: ...
+
+    @abstractmethod
+    def moderate(self, text: str) -> ModerationScores:
+        """Content-safety classification of one text (guardrails use this)."""
 
 
 class OpenAiProvider(LlmProvider):
@@ -46,3 +50,14 @@ class OpenAiProvider(LlmProvider):
             input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
             output_tokens=getattr(usage, "completion_tokens", 0) or 0,
         )
+
+    def moderate(self, text: str) -> ModerationScores:
+        resp = self._client.moderations.create(
+            model="omni-moderation-latest", input=text
+        )
+        result = resp.results[0]
+        scores = {
+            k.replace("-", "_").replace("/", "_"): float(v or 0.0)
+            for k, v in result.category_scores.model_dump().items()
+        }
+        return ModerationScores(flagged=bool(result.flagged), scores=scores)

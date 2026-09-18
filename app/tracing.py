@@ -99,6 +99,26 @@ class Tracer:
         except Exception:
             logger.exception("failed to log generation")
 
+    def log_guardrail(
+        self, *, check: str, action: str, reason: str,
+        scores: dict | None = None, mode: str = "enforce",
+    ) -> None:
+        if not self._client:
+            return
+        try:
+            span = self._client.start_observation(
+                name=f"guardrail:{check}", as_type="span",
+                input={"mode": mode},
+                metadata={"action": action, "reason": reason},
+            )
+            span.update(
+                output={"action": action, "scores": scores or {}},
+                level="WARNING" if action in ("block", "escalate") else "DEFAULT",
+            )
+            span.end()
+        except Exception:
+            logger.exception("failed to log guardrail verdict")
+
     def log_tool_call(self, *, name: str, args: dict, ok: bool, output: Any) -> None:
         if not self._client:
             return

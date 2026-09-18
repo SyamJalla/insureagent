@@ -67,6 +67,20 @@ def _run_case(case: dict) -> tuple[str, dict]:
     answer, state = "", {}
     for msg in case["messages"]:
         ctx = _ctx_for(case["login"])
+        # Mirror ConversationService: input guardrails run before the graph,
+        # so golden runs gate guardrail flips too (mode=off -> no-op).
+        from app.config import get_settings as _gs
+        if _gs().guardrail_mode != "off":
+            from app.guardrails.pipeline import get_guardrail_pipeline
+
+            guard = get_guardrail_pipeline().run_input(msg, ctx)
+            msg = guard.text
+            if guard.action in ("block", "escalate"):
+                answer = guard.user_reply or ""
+                state = {"outcome": "answer", "final_answer": answer}
+                history.append(Message(conversation_id="eval", sender="user", content=msg))
+                history.append(Message(conversation_id="eval", sender="assistant", content=answer))
+                continue
         result, state = runner.run_detailed(ctx, history, msg)
         answer = result.answer
         history.append(Message(conversation_id="eval", sender="user", content=msg))

@@ -19,6 +19,11 @@ numpy
 datasets
 tqdm
 
+# --- Guardrails (input safety; spaCy model: python -m spacy download en_core_web_sm) ---
+presidio-analyzer
+presidio-anonymizer
+huggingface_hub      # fetches the ONNX injection classifier (cached on first use)
+
 # --- Tests & golden-set eval (local dev) ---
 pytest
 httpx                # FastAPI TestClient

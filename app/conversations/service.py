@@ -35,8 +35,31 @@ class ConversationService:
         limit = get_settings().history_message_limit
         history = self._store.get_messages(conversation_id, ctx.user.user_id, limit=limit)
 
+        # Input guardrails run BEFORE the message is stored, so redaction
+        # protects the store, the trace, and the later memory write at once.
+        guard = None
+        if get_settings().guardrail_mode != "off":
+            from app.guardrails.pipeline import get_guardrail_pipeline
+
+            guard = get_guardrail_pipeline().run_input(content, ctx)
+            content = guard.text
+
         user_msg = Message(conversation_id=conversation_id, sender="user", content=content)
         self._store.append_message(user_msg, ctx.user.user_id)
+
+        if guard is not None and guard.action in ("block", "escalate"):
+            # Terminal verdict: canned in-chat reply; the agent graph and the
+            # memory summarizer never see this turn.
+            reply = Message(
+                conversation_id=conversation_id,
+                sender="assistant",
+                content=guard.user_reply
+                or "I can't continue with that message — can I help with an insurance question?",
+                escalated=(guard.action == "escalate"),
+                correlation_id=ctx.correlation_id,
+            )
+            self._store.append_message(reply, ctx.user.user_id)
+            return reply
 
         result = self._runner.run(ctx, history, content)
 

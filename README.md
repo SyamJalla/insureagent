@@ -33,6 +33,7 @@ Uses the shared **`genai`** conda environment (Python 3.11) — the dependencies
 ```bash
 conda activate genai
 pip install -r requirements.txt
+python -m spacy download en_core_web_sm   # PII guardrail (Presidio) model
 ```
 
 ## Setup
@@ -134,6 +135,8 @@ Frontend (static chat page — pure API consumer, JWT only)
 API layer (FastAPI: auth, conversations; middleware builds RequestContext)
    ↓
 Conversation service (sessions, history, context assembly, memory summarizer)
+   ↓  input guardrails (length · PII redaction · moderation · injection) — mode-flagged
+
    ↓
 Agent layer (LangGraph: supervisor → specialists → final answer)
    ↓                                    ↘ LLM gateway (model tiers, cost, retries)
@@ -151,7 +154,7 @@ docstrings under `app/agents/` — start at `orchestrator.py` and `runner.py`.
 
 | Path | Contents |
 | --- | --- |
-| `app/` | The application package: `api/` routers, `auth/`, `conversations/`, `agents/` (supervisor, specialists, orchestrator, runner), `tools/` (gateway + tools, RBAC/ownership), `llm/` (model gateway + router), `memory/` (store, summarizer, retriever), `tracing.py` (Langfuse), `static/` chat UI, `config.py`. |
+| `app/` | The application package: `api/` routers, `auth/`, `conversations/`, `agents/` (supervisor, specialists, orchestrator, runner), `tools/` (gateway + tools, RBAC/ownership), `llm/` (model gateway + router), `memory/` (store, summarizer, retriever), `guardrails/` (input-safety pipeline, one file per check), `tracing.py` (Langfuse), `static/` chat UI, `config.py`. |
 | `scripts/` | `db/migrate.py` + `db/migrations/*.sql` (all DDL), `seed_enterprise.py` (synthetic data), `seed_users.py` (demo accounts). |
 | `create_vectordb.py` | Builds/rebuilds the FAQ vector store (drop + re-ingest, deterministic; run with the app stopped). |
 | `prompts/` | One YAML prompt file per agent. |
@@ -169,4 +172,7 @@ docstrings under `app/agents/` — start at `orchestrator.py` and `runner.py`.
   `langfuse` (Prompt Management, with file fallback; seed via `scripts/push_prompts.py`).
 - Complexity-based model routing is built but OFF (`COMPLEXITY_ROUTING_ENABLED`);
   flip only alongside an eval run.
+- Input guardrails (PII redaction, moderation/self-harm escalation, injection
+  classifier) are built but OFF (`GUARDRAIL_MODE=off`); shadow mode measures
+  without acting; enforce only alongside golden attack cases.
 - Tool calls have no timeouts yet — needed before any real deployment.

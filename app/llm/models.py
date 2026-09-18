@@ -41,6 +41,12 @@ class LlmResponse(BaseModel):
     output_tokens: int = 0
 
 
+class ModerationScores(BaseModel):
+    """Provider-neutral content-moderation result (per-category 0..1 scores)."""
+    flagged: bool = False
+    scores: dict[str, float] = Field(default_factory=dict)
+
+
 class CallRecord(BaseModel):
     """One line per LLM call — the unit of cost/latency observability."""
     agent: str

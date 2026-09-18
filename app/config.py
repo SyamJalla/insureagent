@@ -48,6 +48,21 @@ class Settings(BaseSettings):
     # (Prompt Management with file fallback). Seed via scripts/push_prompts.py.
     prompt_source: str = "file"
 
+    # Guardrails (input safety pipeline, app/guardrails/):
+    # mode "off" = not invoked · "shadow" = evaluate+log only · "enforce" = act.
+    # Flip to enforce only alongside golden attack cases (eval-then-flip).
+    guardrail_mode: str = "off"
+    guardrail_max_input_chars: int = 4000
+    guardrail_pii: bool = True
+    guardrail_moderation: bool = True
+    guardrail_injection: bool = True
+    guardrail_pii_entities: list[str] = [
+        "US_SSN", "CREDIT_CARD", "US_BANK_NUMBER", "US_DRIVER_LICENSE", "US_PASSPORT",
+    ]
+    guardrail_self_harm_threshold: float = 0.5
+    guardrail_toxicity_threshold: float = 0.7
+    guardrail_injection_threshold: float = 0.9
+
 
 @lru_cache
 def get_settings() -> Settings:
