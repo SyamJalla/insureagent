@@ -33,6 +33,9 @@ htmlcov/
 .ipynb_checkpoints/
 .ipython/
 
+# --- Personal scratch space (Syam) — never committed ---
+syams-dump/
+
 # --- Data stores: derived + local only, never in git ---
 # FAQ vector store rebuilds via create_vectordb.py; user-memory embeddings
 # are user data (source of truth: Postgres memory_items).
