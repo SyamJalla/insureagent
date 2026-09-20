@@ -1,256 +1,821 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>InsureAgent</title>
-<style>
-  :root {
-    --bg: #f4f6f8; --panel: #ffffff; --line: #dde3ea; --text: #1c2733;
-    --muted: #64748b; --accent: #0f6cbd; --accent-soft: #e3effa;
-    --warn: #b45309; --warn-soft: #fef3c7;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; }
+<!doctype html>
+<html lang="en" class="dark h-full">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>InsureAgent - AI Insurance Assistant</title>
 
-  /* Login */
-  #login-view { display: flex; align-items: center; justify-content: center; height: 100vh; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 32px; width: 340px; }
-  .card h1 { margin: 0 0 4px; font-size: 22px; }
-  .card p { margin: 0 0 20px; color: var(--muted); font-size: 13px; }
-  .card input { width: 100%; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; }
-  .card button { width: 100%; padding: 10px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font-size: 14px; cursor: pointer; }
-  #login-error { color: #b91c1c; font-size: 13px; min-height: 18px; margin-top: 8px; }
+    <!-- Tailwind CSS v3 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind Typography Plugin for Markdown prose styling -->
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
 
-  /* Chat */
-  #chat-view { display: none; height: 100vh; grid-template-columns: 260px 1fr; }
-  #sidebar { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
-  #sidebar header { padding: 16px; border-bottom: 1px solid var(--line); }
-  #who { font-size: 13px; }
-  #who b { display: block; font-size: 14px; }
-  #who span { color: var(--muted); }
-  #new-conv { margin: 12px 16px; padding: 8px; border: 1px dashed var(--accent); background: var(--accent-soft); color: var(--accent); border-radius: 8px; cursor: pointer; font-size: 13px; }
-  #conv-list { flex: 1; overflow-y: auto; }
-  .conv-item { padding: 10px 16px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .conv-item.active { background: var(--accent-soft); }
-  #logout { margin: 12px 16px; padding: 8px; border: 1px solid var(--line); background: none; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--muted); }
+    <!-- Lucide Vector Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
 
-  #main { display: flex; flex-direction: column; height: 100vh; }
-  #messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
-  .msg { max-width: 70%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; }
-  .msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
-  .msg.assistant { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
-  .msg.escalated { border-color: var(--warn); background: var(--warn-soft); }
-  .esc-tag { display: block; font-size: 11px; color: var(--warn); font-weight: 600; margin-bottom: 4px; }
-  .fb { margin-top: 6px; display: flex; gap: 6px; }
-  .fb button { border: 1px solid var(--line); background: none; border-radius: 6px;
-               cursor: pointer; font-size: 12px; padding: 2px 8px; opacity: 0.6; }
-  .fb button:hover { opacity: 1; }
-  .fb button:disabled { cursor: default; opacity: 0.35; }
-  .fb button.sel { opacity: 1; background: var(--accent-soft); border-color: var(--accent); }
-  .fb.done button { pointer-events: none; }
-  #thinking { align-self: flex-start; color: var(--muted); font-size: 13px; display: none; }
-  #composer { display: flex; gap: 8px; padding: 16px 24px; border-top: 1px solid var(--line); background: var(--panel); }
-  #composer input { flex: 1; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; }
-  #composer button { padding: 10px 20px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; }
-  #composer button:disabled { opacity: 0.5; cursor: default; }
-</style>
-</head>
-<body>
+    <!-- Markdown Parser & XSS Sanitizer -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
 
-<div id="login-view">
-  <form class="card" id="login-form">
-    <h1>InsureAgent</h1>
-    <p>Sign in to your insurance assistant</p>
-    <input id="email" type="email" placeholder="Email" required autocomplete="username">
-    <input id="password" type="password" placeholder="Password" required autocomplete="current-password">
-    <button type="submit">Sign in</button>
-    <div id="login-error"></div>
-  </form>
-</div>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                50: "#f0f7ff",
+                100: "#e0effe",
+                200: "#bae0fd",
+                500: "#0284c7",
+                600: "#0265d2",
+                700: "#034ea2",
+                800: "#074283",
+              },
+            },
+            animation: {
+              "fade-in": "fadeIn 0.25s ease-out forwards",
+              "slide-up": "slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+            },
+            keyframes: {
+              fadeIn: {
+                "0%": { opacity: "0", transform: "translateY(6px)" },
+                "100%": { opacity: "1", transform: "translateY(0)" },
+              },
+              slideUp: {
+                "0%": { opacity: "0", transform: "translateY(16px)" },
+                "100%": { opacity: "1", transform: "translateY(0)" },
+              },
+            },
+          },
+        },
+      };
+    </script>
 
-<div id="chat-view">
-  <div id="sidebar">
-    <header><div id="who"><b></b><span></span></div></header>
-    <button id="new-conv">+ New conversation</button>
-    <div id="conv-list"></div>
-    <button id="logout">Sign out</button>
-  </div>
-  <div id="main">
-    <div id="messages"></div>
-    <div id="thinking" style="padding:0 24px 8px">Assistant is thinking…</div>
-    <form id="composer">
-      <input id="input" placeholder="Ask about your policy, claims, or billing…" autocomplete="off">
-      <button id="send" type="submit">Send</button>
-    </form>
-  </div>
-</div>
+    <style>
+      * {
+        transition:
+          background-color 0.2s ease,
+          border-color 0.2s ease,
+          color 0.2s ease;
+      }
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .dark ::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 9999px;
+      }
+      .dark ::-webkit-scrollbar-thumb:hover {
+        background: #475569;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 9999px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
 
-<script>
-const api = {
-  token: null,
-  async call(method, path, body) {
-    const res = await fetch(path, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        ...(this.token ? { Authorization: "Bearer " + this.token } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (res.status === 401 && path !== "/auth/login") { showLogin(); throw new Error("unauthorized"); }
-    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
-    return res.json();
-  },
-};
+      /* Custom styles for rendered Markdown inside AI responses */
+      .prose p {
+        margin-top: 0.5em;
+        margin-bottom: 0.5em;
+      }
+      .prose p:first-child {
+        margin-top: 0;
+      }
+      .prose p:last-child {
+        margin-bottom: 0;
+      }
+      .prose ul {
+        list-style-type: disc;
+        padding-left: 1.25rem;
+        margin-top: 0.5em;
+        margin-bottom: 0.5em;
+      }
+      .prose ol {
+        list-style-type: decimal;
+        padding-left: 1.25rem;
+        margin-top: 0.5em;
+        margin-bottom: 0.5em;
+      }
+      .prose pre {
+        background-color: #0f172a;
+        padding: 0.75rem 1rem;
+        border-radius: 0.75rem;
+        overflow-x: auto;
+        margin-top: 0.75em;
+        margin-bottom: 0.75em;
+        color: #f8fafc;
+      }
+      .prose code {
+        background-color: rgba(148, 163, 184, 0.15);
+        padding: 0.15rem 0.35rem;
+        border-radius: 0.375rem;
+        font-size: 0.875em;
+        font-family: monospace;
+      }
+      .prose pre code {
+        background-color: transparent;
+        padding: 0;
+      }
+      .prose table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 0.75em;
+        margin-bottom: 0.75em;
+      }
+      .prose th,
+      .prose td {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+      }
+      .prose th {
+        background-color: rgba(148, 163, 184, 0.1);
+        font-weight: 600;
+      }
+      .prose blockquote {
+        border-left: 3px solid #0284c7;
+        padding-left: 0.75rem;
+        color: #64748b;
+        font-style: italic;
+        margin-top: 0.5em;
+        margin-bottom: 0.5em;
+      }
+      .dark .prose blockquote {
+        color: #94a3b8;
+      }
+    </style>
+  </head>
+  <body
+    class="h-full font-sans antialiased bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-brand-500 selection:text-white"
+  >
+    <!-- ================= LOGIN VIEW ================= -->
+    <div
+      id="login-view"
+      class="flex items-center justify-center min-h-screen p-4 relative overflow-hidden bg-gradient-to-br from-slate-100 via-slate-50 to-blue-50/40 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950"
+    >
+      <button
+        onclick="toggleTheme()"
+        type="button"
+        aria-label="Toggle theme"
+        class="absolute top-6 right-6 p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 shadow-sm transition-all"
+      >
+        <i data-lucide="sun" class="w-5 h-5 hidden dark:block"></i>
+        <i data-lucide="moon" class="w-5 h-5 block dark:hidden"></i>
+      </button>
 
-let currentConv = null;
+      <form
+        class="w-full max-w-md bg-white dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800/80 rounded-3xl p-8 shadow-2xl dark:shadow-slate-950/50 backdrop-blur-xl relative"
+        id="login-form"
+      >
+        <div class="flex items-center gap-3.5 mb-6">
+          <div
+            class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-brand-700 via-brand-600 to-blue-400 flex items-center justify-center text-white shadow-lg shadow-brand-600/30"
+          >
+            <i data-lucide="shield-check" class="w-7 h-7"></i>
+          </div>
+          <div>
+            <h1
+              class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white"
+            >
+              InsureAgent
+            </h1>
+            <p class="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Enterprise AI Portal
+            </p>
+          </div>
+        </div>
 
-const $ = (id) => document.getElementById(id);
+        <p
+          class="text-xs text-slate-500 dark:text-slate-400 mb-6 leading-relaxed"
+        >
+          Sign in to manage active policies, review claims status, and receive
+          real-time coverage guidance.
+        </p>
 
-function showLogin() {
-  api.token = null;
-  try { sessionStorage.removeItem("token"); } catch (e) {}
-  $("chat-view").style.display = "none";
-  $("login-view").style.display = "flex";
-}
+        <div class="space-y-4">
+          <div>
+            <label
+              class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5"
+              >Work Email</label
+            >
+            <input
+              id="email"
+              type="email"
+              placeholder="agent@insurance.com"
+              required
+              autocomplete="username"
+              class="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+            />
+          </div>
 
-async function showChat() {
-  $("login-view").style.display = "none";
-  $("chat-view").style.display = "grid";
-  const me = await api.call("GET", "/me");
-  $("who").querySelector("b").textContent = me.user.display_name;
-  $("who").querySelector("span").textContent = me.user.role + (me.policy_count ? ` · ${me.policy_count} policies` : "");
-  await refreshConversations(true);
-}
+          <div>
+            <label
+              class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5"
+              >Password</label
+            >
+            <input
+              id="password"
+              type="password"
+              placeholder="••••••••"
+              required
+              autocomplete="current-password"
+              class="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+            />
+          </div>
 
-async function refreshConversations(openFirst) {
-  const convs = await api.call("GET", "/conversations");
-  const list = $("conv-list");
-  list.innerHTML = "";
-  convs.forEach((c) => {
-    const el = document.createElement("div");
-    el.className = "conv-item" + (currentConv === c.conversation_id ? " active" : "");
-    el.textContent = c.title;
-    el.onclick = () => openConversation(c.conversation_id);
-    list.appendChild(el);
-  });
-  if (openFirst) {
-    if (convs.length) await openConversation(convs[0].conversation_id);
-    else await newConversation();
-  }
-}
+          <button
+            type="submit"
+            class="w-full bg-gradient-to-r from-brand-700 to-brand-600 hover:from-brand-600 hover:to-brand-500 text-white font-medium text-sm py-3 px-4 rounded-xl shadow-lg shadow-brand-600/25 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mt-2"
+          >
+            <span>Authenticate Session</span>
+            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+          </button>
+        </div>
 
-async function openConversation(id) {
-  currentConv = id;
-  const msgs = await api.call("GET", `/conversations/${id}/messages`);
-  const pane = $("messages");
-  pane.innerHTML = "";
-  msgs.forEach(renderMessage);
-  pane.scrollTop = pane.scrollHeight;
-  refreshConversations(false);
-}
+        <div
+          id="login-error"
+          class="mt-4 text-xs font-medium text-rose-500 dark:text-rose-400 min-h-[20px] text-center"
+        ></div>
+      </form>
+    </div>
 
-async function newConversation() {
-  const conv = await api.call("POST", "/conversations");
-  currentConv = conv.conversation_id;
-  $("messages").innerHTML = "";
-  refreshConversations(false);
-}
+    <!-- ================= CHAT VIEW ================= -->
+    <!-- Grid layout updated to 320px for the history sidebar -->
+    <div
+      id="chat-view"
+      class="hidden h-screen w-full lg:grid lg:grid-cols-[320px_1fr] bg-slate-50 dark:bg-slate-950 overflow-hidden relative"
+    >
+      <!-- Mobile Sidebar Backdrop Overlay -->
+      <div
+        id="sidebar-backdrop"
+        onclick="toggleSidebar(false)"
+        class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-40 lg:hidden hidden transition-opacity"
+      ></div>
 
-function renderMessage(m) {
-  const el = document.createElement("div");
-  el.className = `msg ${m.sender}` + (m.escalated ? " escalated" : "");
-  if (m.escalated) {
-    const tag = document.createElement("span");
-    tag.className = "esc-tag";
-    tag.textContent = "Connecting you to a human specialist";
-    el.appendChild(tag);
-  }
-  el.appendChild(document.createTextNode(m.content));
-  if (m.sender === "assistant" && m.message_id) {
-    const fb = document.createElement("div");
-    fb.className = "fb";
-    const note = document.createElement("span");
-    note.style.cssText = "font-size:11px;color:var(--muted);align-self:center;";
-    const buttons = [];
-    let busy = false;
-    for (const [label, rating] of [["👍", "up"], ["👎", "down"]]) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = label;
-      b.onclick = async () => {
-        if (busy) return;
-        busy = true;                                   // block double-clicks NOW
-        buttons.forEach((x) => (x.disabled = true));
-        note.textContent = "saving…";
+      <!-- SIDEBAR (Increased width from 280px to 320px) -->
+      <div
+        id="sidebar"
+        class="fixed inset-y-0 left-0 z-50 w-[320px] -translate-x-full lg:translate-x-0 lg:static bg-white dark:bg-slate-900/90 border-r border-slate-200/80 dark:border-slate-800/80 flex flex-col h-full select-none transition-transform duration-300 ease-in-out"
+      >
+        <!-- User Profile Header -->
+        <header
+          class="p-4 border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between gap-2"
+        >
+          <div class="flex items-center gap-3 min-w-0">
+            <div
+              class="w-10 h-10 rounded-xl bg-brand-50 dark:bg-slate-800 border border-brand-200 dark:border-slate-700 flex items-center justify-center text-brand-700 dark:text-brand-400 font-semibold text-sm shrink-0"
+            >
+              <i data-lucide="user-check" class="w-5 h-5"></i>
+            </div>
+            <div id="who" class="flex-1 min-w-0">
+              <b
+                class="block text-sm font-bold text-slate-800 dark:text-slate-100 truncate"
+              ></b>
+              <span
+                class="text-xs text-slate-500 dark:text-slate-400 truncate block"
+              ></span>
+            </div>
+          </div>
+
+          <button
+            onclick="toggleTheme()"
+            type="button"
+            aria-label="Toggle mode"
+            class="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 shrink-0"
+          >
+            <i data-lucide="sun" class="w-4 h-4 hidden dark:block"></i>
+            <i data-lucide="moon" class="w-4 h-4 block dark:hidden"></i>
+          </button>
+        </header>
+
+        <!-- New Conversation Action -->
+        <div class="p-3.5">
+          <button
+            id="new-conv"
+            class="w-full flex items-center gap-3 px-4 py-3 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60 text-slate-800 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700/80 font-medium text-sm transition-all text-left shadow-xs group"
+          >
+            <i
+              data-lucide="plus"
+              class="w-5 h-5 text-slate-600 dark:text-slate-300 group-hover:scale-110 transition-transform"
+            ></i>
+            <span>New chat</span>
+          </button>
+        </div>
+
+        <!-- Gemini Section Label -->
+        <div
+          class="px-4 pt-3 pb-2 flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400"
+        >
+          <span>Recent</span>
+          <i data-lucide="history" class="w-4 h-4"></i>
+        </div>
+
+        <!-- Gemini-Style History Conversation List -->
+        <div id="conv-list" class="flex-1 overflow-y-auto px-3 space-y-1"></div>
+
+        <div
+          class="p-3.5 border-t border-slate-200/80 dark:border-slate-800/80"
+        >
+          <button
+            id="logout"
+            class="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-medium transition-all"
+          >
+            <i data-lucide="log-out" class="w-4 h-4"></i>
+            <span>Sign out</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- MAIN WORKSPACE -->
+      <div
+        id="main"
+        class="flex flex-col h-full bg-slate-50 dark:bg-slate-950 relative overflow-hidden"
+      >
+        <!-- Top Bar -->
+        <div
+          class="h-14 border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between px-4 md:px-6 bg-white/70 dark:bg-slate-900/50 backdrop-blur-md z-10 shrink-0"
+        >
+          <div class="flex items-center gap-3">
+            <button
+              onclick="toggleSidebar(true)"
+              class="lg:hidden p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300"
+            >
+              <i data-lucide="menu" class="w-4 h-4"></i>
+            </button>
+            <div class="flex items-center gap-2">
+              <span
+                class="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100"
+                >InsureAgent AI</span
+              >
+              <span
+                class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+              >
+                ● Underwriting & Claims Engine
+              </span>
+            </div>
+          </div>
+
+          <div
+            class="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400"
+          >
+            <span class="hidden md:inline-flex items-center gap-1.5"
+              ><i data-lucide="shield" class="w-3.5 h-3.5"></i> HIPAA
+              Compliant</span
+            >
+          </div>
+        </div>
+
+        <!-- GEMINI WORKSPACE CONTAINER -->
+        <div
+          id="workspace-container"
+          class="flex-1 flex flex-col justify-center transition-all duration-500 ease-in-out relative overflow-hidden"
+        >
+          <!-- Welcome Screen (Centered - Gemini Style) -->
+          <div
+            id="welcome-screen"
+            class="max-w-2xl w-full mx-auto px-6 py-8 text-center space-y-4 animate-fade-in transition-all duration-300"
+          >
+            <div
+              class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-brand-700 to-blue-400 text-white shadow-xl shadow-brand-500/20 mb-2"
+            >
+              <i data-lucide="sparkles" class="w-7 h-7"></i>
+            </div>
+            <h2
+              class="text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight"
+            >
+              How can I help with your policies today?
+            </h2>
+            <p
+              class="text-xs md:text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed"
+            >
+              Ask about coverage benefits, check real-time claim status, or
+              generate automated policy summaries.
+            </p>
+          </div>
+
+          <!-- Messages Stream -->
+          <div
+            id="messages"
+            class="hidden flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 space-y-6 max-w-3xl w-full mx-auto animate-fade-in"
+          ></div>
+
+          <!-- Thinking Indicator -->
+          <div
+            id="thinking"
+            class="hidden max-w-3xl w-full mx-auto px-4 md:px-6 mb-2 shrink-0"
+          >
+            <div
+              class="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2.5 rounded-2xl shadow-xs w-fit"
+            >
+              <i
+                data-lucide="sparkles"
+                class="w-4 h-4 text-brand-600 dark:text-brand-400 animate-spin"
+              ></i>
+              <span>InsureAgent is processing your inquiry…</span>
+            </div>
+          </div>
+
+          <!-- Gemini Input Area Wrapper -->
+          <div
+            id="composer-container"
+            class="w-full max-w-3xl mx-auto p-4 md:p-6 transition-all duration-500 ease-in-out shrink-0"
+          >
+            <form
+              id="composer"
+              class="relative flex flex-col bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 focus-within:border-brand-500 dark:focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20 rounded-3xl p-2.5 shadow-xl transition-all"
+            >
+              <textarea
+                id="input"
+                rows="2"
+                placeholder="Ask about policy terms, coverage specs, billing, or claims submission…"
+                autocomplete="off"
+                class="w-full bg-transparent border-0 px-3 py-2 text-sm md:text-base text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none resize-none min-h-[52px] max-h-[160px]"
+              ></textarea>
+
+              <div
+                class="flex items-center justify-between pt-1 px-2 border-t border-slate-100 dark:border-slate-800/60 mt-1"
+              >
+                <div class="flex items-center gap-2 text-xs text-slate-400">
+                  <i
+                    data-lucide="shield-check"
+                    class="w-3.5 h-3.5 text-emerald-500"
+                  ></i>
+                  <span class="text-[11px]">Encrypted Agent AI</span>
+                </div>
+                <button
+                  id="send"
+                  type="submit"
+                  class="flex items-center justify-center w-9 h-9 rounded-2xl bg-brand-600 hover:bg-brand-500 text-white disabled:opacity-40 disabled:hover:bg-brand-600 transition-all shadow-md shrink-0"
+                >
+                  <i data-lucide="arrow-up" class="w-5 h-5"></i>
+                </button>
+              </div>
+            </form>
+            <p
+              class="text-[11px] text-center text-slate-400 dark:text-slate-500 mt-2.5"
+            >
+              Verified Insurance Assistant. Complex or disputed claims
+              automatically route to human policy specialists.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Configure Marked Options for Breaks
+      marked.setOptions({
+        gfm: true,
+        breaks: true,
+      });
+
+      // UI Helper Functions
+      function toggleTheme() {
+        const isDark = document.documentElement.classList.toggle("dark");
         try {
-          await api.call("POST",
-            `/conversations/${m.conversation_id}/messages/${m.message_id}/feedback`,
-            { rating });
-          buttons.forEach((x) => x.classList.remove("sel"));
-          b.classList.add("sel");
-          note.textContent = "thanks for the feedback";
-          buttons.forEach((x) => (x.disabled = false)); // allow changing the vote
-          busy = false;
-        } catch (e) {
-          note.textContent = "couldn't save — try again";
-          buttons.forEach((x) => (x.disabled = false));
-          busy = false;
+          localStorage.setItem("theme", isDark ? "dark" : "light");
+        } catch (e) {}
+      }
+
+      function toggleSidebar(open) {
+        const sidebar = $("sidebar");
+        const backdrop = $("sidebar-backdrop");
+        if (open) {
+          sidebar.classList.remove("-translate-x-full");
+          backdrop.classList.remove("hidden");
+        } else {
+          sidebar.classList.add("-translate-x-full");
+          backdrop.classList.add("hidden");
+        }
+      }
+
+      function setChatLayoutState(hasMessages) {
+        const welcome = $("welcome-screen");
+        const messages = $("messages");
+        const container = $("workspace-container");
+
+        if (hasMessages) {
+          welcome.classList.add("hidden");
+          messages.classList.remove("hidden");
+          container.classList.remove("justify-center");
+          container.classList.add("justify-between");
+        } else {
+          welcome.classList.remove("hidden");
+          messages.classList.add("hidden");
+          container.classList.remove("justify-between");
+          container.classList.add("justify-center");
+        }
+      }
+
+      (function initTheme() {
+        let saved = null;
+        try {
+          saved = localStorage.getItem("theme");
+        } catch (e) {}
+        if (saved === "light") {
+          document.documentElement.classList.remove("dark");
+        } else {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+
+      // API Handler Engine
+      const api = {
+        token: null,
+        async call(method, path, body) {
+          const res = await fetch(path, {
+            method,
+            headers: {
+              "Content-Type": "application/json",
+              ...(this.token ? { Authorization: "Bearer " + this.token } : {}),
+            },
+            body: body ? JSON.stringify(body) : undefined,
+          });
+          if (res.status === 401 && path !== "/auth/login") {
+            showLogin();
+            throw new Error("unauthorized");
+          }
+          if (!res.ok)
+            throw new Error((await res.json()).detail || res.statusText);
+          return res.json();
+        },
+      };
+
+      let currentConv = null;
+      const $ = (id) => document.getElementById(id);
+
+      function showLogin() {
+        api.token = null;
+        try {
+          sessionStorage.removeItem("token");
+        } catch (e) {}
+        $("chat-view").style.display = "none";
+        $("login-view").style.display = "flex";
+      }
+
+      async function showChat() {
+        $("login-view").style.display = "none";
+        $("chat-view").style.display = "grid";
+        const me = await api.call("GET", "/me");
+        $("who").querySelector("b").textContent = me.user.display_name;
+        $("who").querySelector("span").textContent =
+          me.user.role +
+          (me.policy_count ? ` · ${me.policy_count} policies` : "");
+        await refreshConversations(true);
+      }
+
+      // History Refresh logic (Wide 320px sidebar compatibility)
+      async function refreshConversations(openFirst) {
+        const convs = await api.call("GET", "/conversations");
+        const list = $("conv-list");
+        list.innerHTML = "";
+        convs.forEach((c) => {
+          const el = document.createElement("div");
+
+          const isActive = currentConv === c.conversation_id;
+          el.className = `conv-item flex items-center gap-3 px-4 py-2.5 rounded-full text-sm font-medium cursor-pointer transition-all truncate ${
+            isActive
+              ? "bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-semibold"
+              : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-100"
+          }`;
+
+          const icon = document.createElement("i");
+          icon.setAttribute("data-lucide", "message-square");
+          icon.className = `w-4 h-4 shrink-0 ${isActive ? "text-brand-600 dark:text-brand-400" : "text-slate-400 dark:text-slate-500"}`;
+
+          const span = document.createElement("span");
+          span.className = "truncate flex-1 text-sm";
+          span.textContent = c.title;
+
+          el.appendChild(icon);
+          el.appendChild(span);
+
+          el.onclick = () => {
+            openConversation(c.conversation_id);
+            toggleSidebar(false);
+          };
+          list.appendChild(el);
+        });
+
+        lucide.createIcons();
+
+        if (openFirst) {
+          if (convs.length) await openConversation(convs[0].conversation_id);
+          else await newConversation();
+        }
+      }
+
+      async function openConversation(id) {
+        currentConv = id;
+        const msgs = await api.call("GET", `/conversations/${id}/messages`);
+        const pane = $("messages");
+        pane.innerHTML = "";
+
+        setChatLayoutState(msgs.length > 0);
+
+        msgs.forEach(renderMessage);
+        pane.scrollTop = pane.scrollHeight;
+        refreshConversations(false);
+      }
+
+      async function newConversation() {
+        const conv = await api.call("POST", "/conversations");
+        currentConv = conv.conversation_id;
+        $("messages").innerHTML = "";
+        setChatLayoutState(false);
+        refreshConversations(false);
+      }
+
+      function renderMessage(m) {
+        setChatLayoutState(true);
+
+        const el = document.createElement("div");
+        const isUser = m.sender === "user";
+
+        el.className = `msg flex flex-col ${isUser ? "items-end" : "items-start"} animate-slide-up ${m.escalated ? "escalated" : ""}`;
+
+        const bubble = document.createElement("div");
+
+        if (isUser) {
+          bubble.className =
+            "max-w-[85%] md:max-w-[78%] px-5 py-3.5 rounded-3xl text-sm md:text-base bg-brand-600 text-white shadow-sm rounded-tr-xs font-normal leading-relaxed whitespace-pre-wrap break-words";
+        } else {
+          bubble.className = `max-w-[85%] md:max-w-[78%] px-5 py-3.5 rounded-3xl text-sm md:text-base leading-relaxed break-words ${
+            m.escalated
+              ? "bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-500/40 text-amber-950 dark:text-amber-100 rounded-tl-xs shadow-xs"
+              : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 rounded-tl-xs shadow-xs"
+          }`;
+        }
+
+        if (m.escalated) {
+          const tag = document.createElement("div");
+          tag.className =
+            "esc-tag flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400 mb-2 pb-2 border-b border-amber-200 dark:border-amber-500/20";
+          tag.innerHTML = `<i data-lucide="headset" class="w-4 h-4"></i><span>Escalation Notice: Connecting human policy specialist</span>`;
+          bubble.appendChild(tag);
+        }
+
+        const contentNode = document.createElement("div");
+
+        if (isUser) {
+          contentNode.textContent = m.content;
+        } else {
+          contentNode.className =
+            "prose dark:prose-invert max-w-none text-sm md:text-base leading-relaxed";
+          const rawMarkdownHtml = marked.parse(m.content || "");
+          contentNode.innerHTML = DOMPurify.sanitize(rawMarkdownHtml);
+        }
+
+        bubble.appendChild(contentNode);
+
+        if (m.sender === "assistant" && m.message_id) {
+          const fb = document.createElement("div");
+          fb.className =
+            "fb flex items-center gap-2 mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 text-slate-400";
+
+          const note = document.createElement("span");
+          note.className =
+            "text-[11px] text-slate-400 dark:text-slate-500 font-medium ml-1";
+
+          const buttons = [];
+          let busy = false;
+
+          for (const [label, rating, iconName] of [
+            ["👍", "up", "thumbs-up"],
+            ["👎", "down", "thumbs-down"],
+          ]) {
+            const b = document.createElement("button");
+            b.type = "button";
+            b.className =
+              "p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-200 transition-all text-xs flex items-center justify-center border border-transparent";
+            b.innerHTML = `<i data-lucide="${iconName}" class="w-3.5 h-3.5"></i>`;
+
+            b.onclick = async () => {
+              if (busy) return;
+              busy = true;
+              buttons.forEach((x) => (x.disabled = true));
+              note.textContent = "saving…";
+              try {
+                await api.call(
+                  "POST",
+                  `/conversations/${m.conversation_id}/messages/${m.message_id}/feedback`,
+                  { rating },
+                );
+                buttons.forEach((x) =>
+                  x.classList.remove(
+                    "text-brand-600",
+                    "dark:text-brand-400",
+                    "border-brand-200",
+                    "bg-brand-50",
+                  ),
+                );
+                b.classList.add(
+                  "text-brand-600",
+                  "dark:text-brand-400",
+                  "border-brand-200",
+                  "bg-brand-50",
+                  "dark:bg-slate-800",
+                );
+                note.textContent = "thanks for the feedback";
+                buttons.forEach((x) => (x.disabled = false));
+                busy = false;
+              } catch (e) {
+                note.textContent = "couldn't save — try again";
+                buttons.forEach((x) => (x.disabled = false));
+                busy = false;
+              }
+            };
+            buttons.push(b);
+            fb.appendChild(b);
+          }
+          fb.appendChild(note);
+          bubble.appendChild(fb);
+        }
+
+        el.appendChild(bubble);
+        $("messages").appendChild(el);
+
+        lucide.createIcons();
+      }
+
+      // Event Triggers
+      $("login-form").onsubmit = async (e) => {
+        e.preventDefault();
+        $("login-error").textContent = "";
+        try {
+          const t = await api.call("POST", "/auth/login", {
+            email: $("email").value,
+            password: $("password").value,
+          });
+          api.token = t.access_token;
+          try {
+            sessionStorage.setItem("token", t.access_token);
+          } catch (err) {}
+          await showChat();
+        } catch (err) {
+          $("login-error").textContent = err.message;
         }
       };
-      buttons.push(b);
-      fb.appendChild(b);
-    }
-    fb.appendChild(note);
-    el.appendChild(fb);
-  }
-  $("messages").appendChild(el);
-}
 
-$("login-form").onsubmit = async (e) => {
-  e.preventDefault();
-  $("login-error").textContent = "";
-  try {
-    const t = await api.call("POST", "/auth/login", { email: $("email").value, password: $("password").value });
-    api.token = t.access_token;
-    try { sessionStorage.setItem("token", t.access_token); } catch (err) {}
-    await showChat();
-  } catch (err) {
-    $("login-error").textContent = err.message;
-  }
-};
+      $("input").addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          $("composer").requestSubmit();
+        }
+      });
 
-$("composer").onsubmit = async (e) => {
-  e.preventDefault();
-  const text = $("input").value.trim();
-  if (!text || !currentConv) return;
-  $("input").value = "";
-  renderMessage({ sender: "user", content: text, escalated: false });
-  $("messages").scrollTop = $("messages").scrollHeight;
-  $("send").disabled = true;
-  $("thinking").style.display = "block";
-  try {
-    const reply = await api.call("POST", `/conversations/${currentConv}/messages`, { content: text });
-    renderMessage(reply);
-  } catch (err) {
-    renderMessage({ sender: "assistant", content: "Something went wrong: " + err.message, escalated: false });
-  } finally {
-    $("send").disabled = false;
-    $("thinking").style.display = "none";
-    $("messages").scrollTop = $("messages").scrollHeight;
-    refreshConversations(false);
-  }
-};
+      $("composer").onsubmit = async (e) => {
+        e.preventDefault();
+        const text = $("input").value.trim();
+        if (!text || !currentConv) return;
+        $("input").value = "";
+        renderMessage({ sender: "user", content: text, escalated: false });
+        $("messages").scrollTop = $("messages").scrollHeight;
+        $("send").disabled = true;
+        $("thinking").style.display = "block";
+        try {
+          const reply = await api.call(
+            "POST",
+            `/conversations/${currentConv}/messages`,
+            { content: text },
+          );
+          renderMessage(reply);
+        } catch (err) {
+          renderMessage({
+            sender: "assistant",
+            content: "Something went wrong: " + err.message,
+            escalated: false,
+          });
+        } finally {
+          $("send").disabled = false;
+          $("thinking").style.display = "none";
+          $("messages").scrollTop = $("messages").scrollHeight;
+          refreshConversations(false);
+        }
+      };
 
-$("new-conv").onclick = newConversation;
-$("logout").onclick = showLogin;
+      $("new-conv").onclick = newConversation;
+      $("logout").onclick = showLogin;
 
-(function init() {
-  let saved = null;
-  try { saved = sessionStorage.getItem("token"); } catch (e) {}
-  if (saved) { api.token = saved; showChat().catch(showLogin); }
-})();
-</script>
-</body>
+      (function init() {
+        let saved = null;
+        try {
+          saved = sessionStorage.getItem("token");
+        } catch (e) {}
+        if (saved) {
+          api.token = saved;
+          showChat().catch(showLogin);
+        }
+        lucide.createIcons();
+      })();
+    </script>
+  </body>
 </html>
