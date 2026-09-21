@@ -80,6 +80,13 @@ python -m spacy download en_core_web_sm   # PII guardrail (Presidio) model
 
    The seed script prints the demo logins (e.g. `customer1@demo.local` / `demo123`).
 
+   Fresh-slate reset any time (wipes conversations, memory, and Langfuse
+   traces for all users; keeps logins and enterprise data):
+
+   ```bash
+   python scripts/reset_activity.py
+   ```
+
 ## Running
 
 ```bash
