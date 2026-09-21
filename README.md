@@ -32,8 +32,8 @@ Uses the shared **`genai`** conda environment (Python 3.11) — the dependencies
 
 ```bash
 conda activate genai
-pip install -r requirements.txt
-python -m spacy download en_core_web_sm   # PII guardrail (Presidio) model
+pip install -r requirements.txt           # includes the spaCy PII model (pip wheel)
+python scripts/fetch_models.py            # non-pip models: injection ~700MB, embeddings ~80MB (one-time)
 ```
 
 ## Setup

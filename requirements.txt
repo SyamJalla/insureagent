@@ -19,10 +19,11 @@ numpy
 datasets
 tqdm
 
-# --- Guardrails (input safety; spaCy model: python -m spacy download en_core_web_sm) ---
+# --- Guardrails (input safety; then run scripts/fetch_models.py for the non-pip models) ---
 presidio-analyzer
 presidio-anonymizer
-huggingface_hub      # fetches the ONNX injection classifier (cached on first use)
+huggingface_hub      # used by scripts/fetch_models.py for the ONNX injection classifier
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 
 # --- Tests & golden-set eval (local dev) ---
 pytest
