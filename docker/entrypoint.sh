@@ -28,4 +28,7 @@ fi
 
 python scripts/db/migrate.py
 
-exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --workers 2
+# Standard entrypoint convention: run whatever command was passed (e.g.
+# `docker compose run app python scripts/seed_users.py`); the server is
+# only the DEFAULT command (CMD in the Dockerfile).
+exec "$@"

@@ -23,3 +23,6 @@ COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 EXPOSE 8000
 ENTRYPOINT ["/entrypoint.sh"]
+# Default command — overridden by one-off runs (seeds, pytest) which still
+# get the entrypoint's volume-seed + migrate first.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
