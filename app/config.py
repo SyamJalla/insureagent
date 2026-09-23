@@ -12,6 +12,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # Deployment environment: "dev" (default) or "prod". In prod, unsafe
+    # defaults refuse to boot (see get_settings).
+    environment: str = "dev"
+
     # Secrets (from .env)
     openai_api_key: str
     jwt_secret: str = "change-me-in-.env"
@@ -67,4 +71,12 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    if s.environment == "prod" and s.jwt_secret == "change-me-in-.env":
+        # The JWT secret is the ONLY thing preventing forged tokens; with
+        # the default value, anyone can mint an admin session. Fail loud.
+        raise RuntimeError(
+            "Refusing to start: ENVIRONMENT=prod with the default JWT_SECRET. "
+            "Set a real one, e.g.:  openssl rand -hex 32"
+        )
+    return s
