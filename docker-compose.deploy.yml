@@ -1,0 +1,21 @@
+# Production compose (EC2). Run:
+#   docker compose -f docker-compose.deploy.yml up -d
+# Seeds are explicit one-offs, never startup:
+#   docker compose -f docker-compose.deploy.yml run --rm app python scripts/seed_enterprise.py
+# Local verification on a dev machine uses the override:
+#   docker compose -f docker-compose.deploy.yml -f docker-compose.local-test.yml up -d
+services:
+  app:
+    image: insureagent
+    build: .
+    env_file: .env
+    environment:
+      VECTOR_DB_PATH: /data/vector_database
+    ports:
+      - "80:8000"
+    volumes:
+      - appdata:/data        # user-memory embeddings survive container replacement
+    restart: unless-stopped  # self-heals crashes and machine reboots
+
+volumes:
+  appdata:

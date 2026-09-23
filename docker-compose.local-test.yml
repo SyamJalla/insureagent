@@ -1,0 +1,9 @@
+# Local-verification override (dev machine, NOT used on the server):
+# reaches the host's Postgres and avoids binding port 80.
+#   docker compose -f docker-compose.deploy.yml -f docker-compose.local-test.yml up -d
+services:
+  app:
+    environment:
+      APP_DB_URL: postgresql://postgres:root@host.docker.internal:5432/insureagent
+    ports: !override
+      - "8080:8000"
