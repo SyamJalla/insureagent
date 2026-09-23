@@ -34,10 +34,17 @@ def pick_demo_customers(cur) -> tuple[str, str, str, str]:
         "SELECT customer_id FROM policies WHERE status='active' ORDER BY policy_number LIMIT 1"
     )
     active = cur.fetchone()[0]
+    # Open claim AND the richest claim history — a better demo story, and a
+    # deterministic pick with a clear margin (golden cases 7/11 pin this
+    # customer's policy facts, so the pick must converge on every machine;
+    # ON CONFLICT DO NOTHING means a changed pick only applies to fresh
+    # setups — hence the strong ordering).
     cur.execute(
         """SELECT p.customer_id FROM claims c JOIN policies p USING (policy_number)
-           WHERE c.status IN ('submitted','under_review') AND p.customer_id != %s
-           ORDER BY p.customer_id LIMIT 1""",
+           WHERE p.customer_id != %s
+           GROUP BY p.customer_id
+           HAVING bool_or(c.status IN ('submitted','under_review'))
+           ORDER BY COUNT(*) DESC, p.customer_id LIMIT 1""",
         (active,),
     )
     claimant = cur.fetchone()[0]
