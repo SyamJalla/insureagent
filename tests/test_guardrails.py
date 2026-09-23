@@ -67,6 +67,29 @@ def test_pii_redacts_ssn():
     assert "US_SSN" in v.reason
 
 
+def test_pii_redacts_indian_pan():
+    pytest.importorskip("presidio_analyzer")
+    from app.guardrails.checks.pii_presidio import PiiRedaction
+
+    # 4th char must be in Presidio's PAN holder-type set (A/B/C/F/G/H/J/L/P/T).
+    v = PiiRedaction().check("my pan is ABCPD1234E, need my details", _ctx())
+    assert v.action == GuardrailAction.REDACT
+    assert "ABCPD1234E" not in v.text
+    assert "IN_PAN" in v.reason
+
+
+def test_pii_redacts_indian_aadhaar():
+    pytest.importorskip("presidio_analyzer")
+    from app.guardrails.checks.pii_presidio import PiiRedaction
+
+    # Verhoeff-valid 12-digit number (Presidio checksum-validates Aadhaar;
+    # an invalid number is deliberately NOT flagged as IN_AADHAAR).
+    v = PiiRedaction().check("my aadhaar is 718190937865, help with claims", _ctx())
+    assert v.action == GuardrailAction.REDACT
+    assert "718190937865" not in v.text
+    assert "IN_AADHAAR" in v.reason
+
+
 # --- moderation policy mapping (stubbed gateway) ----------------------------
 
 def _stub_moderation(monkeypatch, scores):

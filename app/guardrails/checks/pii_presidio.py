@@ -33,7 +33,19 @@ def _engines():
             "nlp_engine_name": "spacy",
             "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
         }).create_engine()
-        return AnalyzerEngine(nlp_engine=nlp), AnonymizerEngine()
+        analyzer = AnalyzerEngine(nlp_engine=nlp)
+        # Jurisdiction is policy: Presidio's default registry loads only a
+        # US/UK/generic panel, so national recognizers must be registered
+        # explicitly (capability) AND listed in guardrail_pii_entities
+        # (policy). IN_AADHAAR checksum-validates (Verhoeff) — invalid
+        # numbers are correctly ignored, like the denylisted sample SSNs.
+        from presidio_analyzer.predefined_recognizers import (
+            InAadhaarRecognizer, InPanRecognizer,
+        )
+
+        analyzer.registry.add_recognizer(InAadhaarRecognizer())
+        analyzer.registry.add_recognizer(InPanRecognizer())
+        return analyzer, AnonymizerEngine()
     except Exception as exc:  # missing package / spaCy model
         logger.warning("PII check disabled (%s: %s)", type(exc).__name__, exc)
         return None

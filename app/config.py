@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     guardrail_injection: bool = True
     guardrail_pii_entities: list[str] = [
         "US_SSN", "CREDIT_CARD", "US_BANK_NUMBER", "US_DRIVER_LICENSE", "US_PASSPORT",
+        "IN_AADHAAR", "IN_PAN",
     ]
     guardrail_self_harm_threshold: float = 0.5
     guardrail_toxicity_threshold: float = 0.7
