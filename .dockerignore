@@ -1,0 +1,21 @@
+# Secrets NEVER enter an image (images get pushed, shared, cached).
+.env
+.env.*
+
+# Local data stores: the image builds its OWN clean FAQ store at build
+# time; local user-memory embeddings must not leak into it.
+datasources/
+
+# Not needed to run the app
+.git/
+docs/
+tests/
+syams-dump/
+scratch-design/
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.deepeval/
