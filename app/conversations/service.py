@@ -18,7 +18,10 @@ class ConversationService:
         self._runner = runner
 
     def start(self, ctx: RequestContext) -> Conversation:
-        return self._store.create(ctx.user.user_id)
+        conversation = self._store.create(ctx.user.user_id)
+        ctx.conversation_id = conversation.conversation_id
+        self._ensure_trace_context(ctx, conversation.conversation_id)
+        return conversation
 
     def list_for_user(self, ctx: RequestContext) -> list[Conversation]:
         return self._store.list_for_user(ctx.user.user_id)
@@ -32,47 +35,75 @@ class ConversationService:
         if self._store.get(conversation_id, ctx.user.user_id) is None:
             raise ConversationNotFound(conversation_id)
         ctx.conversation_id = conversation_id  # completes the ID hierarchy for tracing
+        trace_context = self._ensure_trace_context(ctx, conversation_id)
         limit = get_settings().history_message_limit
         history = self._store.get_messages(conversation_id, ctx.user.user_id, limit=limit)
 
-        # Input guardrails run BEFORE the message is stored, so redaction
-        # protects the store, the trace, and the later memory write at once.
-        guard = None
-        if get_settings().guardrail_mode != "off":
-            from app.guardrails.pipeline import get_guardrail_pipeline
+        from app.tracing import get_tracer
 
-            guard = get_guardrail_pipeline().run_input(content, ctx)
-            content = guard.text
+        tracer = get_tracer()
+        # Start before guardrails so their observations share the turn root.
+        # The root input is set only after redaction, keeping raw PII out of traces.
+        trace_id, parent_span_id = trace_context or (None, None)
+        with tracer.request_trace(
+            ctx, trace_id=trace_id, parent_span_id=parent_span_id
+        ) as trace:
+            guard = None
+            if get_settings().guardrail_mode != "off":
+                from app.guardrails.pipeline import get_guardrail_pipeline
 
-        user_msg = Message(conversation_id=conversation_id, sender="user", content=content)
-        self._store.append_message(user_msg, ctx.user.user_id)
+                guard = get_guardrail_pipeline().run_input(content, ctx)
+                content = guard.text
+            tracer.update_request_input(trace, content)
 
-        if guard is not None and guard.action in ("block", "escalate"):
-            # Terminal verdict: canned in-chat reply; the agent graph and the
-            # memory summarizer never see this turn.
+            user_msg = Message(conversation_id=conversation_id, sender="user", content=content)
+            self._store.append_message(user_msg, ctx.user.user_id)
+
+            if guard is not None and guard.action in ("block", "escalate"):
+                # Terminal verdict: canned in-chat reply; the agent graph and the
+                # memory summarizer never see this turn.
+                reply = Message(
+                    conversation_id=conversation_id,
+                    sender="assistant",
+                    content=guard.user_reply
+                    or "I can't continue with that message — can I help with an insurance question?",
+                    escalated=(guard.action == "escalate"),
+                    correlation_id=ctx.correlation_id,
+                    langfuse_trace_id=getattr(trace, "trace_id", None),
+                    langfuse_observation_id=getattr(trace, "id", None),
+                )
+                tracer.finish_request(guard.action, reply.content[:500])
+                self._store.append_message(reply, ctx.user.user_id)
+                return reply
+
+            result = self._runner.run(ctx, history, content)
+
             reply = Message(
                 conversation_id=conversation_id,
                 sender="assistant",
-                content=guard.user_reply
-                or "I can't continue with that message — can I help with an insurance question?",
-                escalated=(guard.action == "escalate"),
+                content=result.answer,
+                escalated=result.escalated,
                 correlation_id=ctx.correlation_id,
+                langfuse_trace_id=getattr(trace, "trace_id", None),
+                langfuse_observation_id=getattr(trace, "id", None),
             )
             self._store.append_message(reply, ctx.user.user_id)
+            self._summarize(ctx, conversation_id)
             return reply
 
-        result = self._runner.run(ctx, history, content)
+    def _ensure_trace_context(
+        self, ctx: RequestContext, conversation_id: str
+    ) -> tuple[str, str] | None:
+        from app.tracing import get_tracer
 
-        reply = Message(
-            conversation_id=conversation_id,
-            sender="assistant",
-            content=result.answer,
-            escalated=result.escalated,
-            correlation_id=ctx.correlation_id,
+        tracer = get_tracer()
+        if not tracer.enabled:
+            return None
+        return self._store.ensure_trace_context(
+            conversation_id,
+            ctx.user.user_id,
+            lambda: tracer.create_conversation_trace(ctx, conversation_id),
         )
-        self._store.append_message(reply, ctx.user.user_id)
-        self._summarize(ctx, conversation_id)
-        return reply
 
     def _summarize(self, ctx: RequestContext, conversation_id: str) -> None:
         """Memory write path — never breaks the chat (guarded inside)."""
@@ -98,11 +129,18 @@ class ConversationService:
             "👍👎 feedback | user=%s rating=%s message=%s corr=%s",
             ctx.user.user_id, rating, message_id, target.correlation_id,
         )
-        if target.correlation_id:
+        if target.langfuse_trace_id or target.correlation_id:
             from app.tracing import get_tracer
 
-            get_tracer().score(
-                target.correlation_id, "user_feedback",
-                1.0 if rating == "up" else 0.0, comment,
-                idempotency_key=message_id,  # repeat clicks overwrite, never stack
+            tracer = get_tracer()
+            trace_id = target.langfuse_trace_id or tracer.legacy_request_trace_id(
+                target.correlation_id
             )
+            if trace_id:
+                tracer.score(
+                    trace_id, "user_feedback",
+                    1.0 if rating == "up" else 0.0,
+                    comment,
+                    idempotency_key=message_id,  # repeat clicks overwrite, never stack
+                    observation_id=target.langfuse_observation_id,
+                )

@@ -21,6 +21,8 @@ class Message(BaseModel):
     content: str
     escalated: bool = False
     correlation_id: str | None = None   # request that produced it -> Langfuse trace
+    langfuse_trace_id: str | None = Field(default=None, exclude=True)
+    langfuse_observation_id: str | None = Field(default=None, exclude=True)
     created_at: datetime = Field(default_factory=_now)
 
 
@@ -30,3 +32,5 @@ class Conversation(BaseModel):
     title: str = "New conversation"
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
+    langfuse_trace_id: str | None = Field(default=None, exclude=True)
+    langfuse_root_observation_id: str | None = Field(default=None, exclude=True)

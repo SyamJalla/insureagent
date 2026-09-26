@@ -69,30 +69,50 @@ class AgentRunner:
             ctx.correlation_id, ctx.user.user_id, ctx.user.role.value, user_input[:120],
         )
         llm, tools = _gateways()
-        conversation_history = _render_history(ctx, history, user_input)
-        from app.config import get_settings
-        if get_settings().memory_enabled:
-            from app.memory.retriever import memory_block
-            from app.memory.store import get_memory_store
-
-            block = memory_block(get_memory_store(), ctx, user_input)
-            if block:
-                conversation_history = block + "\n" + conversation_history
-        state = {
-            "user_input": user_input,
-            "conversation_history": conversation_history,
-            "n_iteration": 0,
-            "collected_facts": [],
-            "requires_human_escalation": False,
-            "outcome": "",
-        }
         tracer = get_tracer()
         try:
             with tracer.request_trace(ctx, user_input):
-                final = _graph().invoke(
-                    state,
-                    config={"configurable": {"ctx": ctx, "llm": llm, "tools": tools}},
-                )
+                conversation_history = _render_history(ctx, history, user_input)
+                from app.config import get_settings
+                if get_settings().memory_enabled:
+                    from app.memory.retriever import memory_block
+                    from app.memory.store import get_memory_store
+
+                    with tracer.observation(
+                        "memory_retrieval", input={"query": user_input}
+                    ) as memory_span:
+                        block = memory_block(get_memory_store(), ctx, user_input)
+                        if block and memory_span:
+                            memory_span.update(output={"context": block})
+                else:
+                    block = ""
+                if block:
+                    conversation_history = block + "\n" + conversation_history
+                state = {
+                    "user_input": user_input,
+                    "conversation_history": conversation_history,
+                    "n_iteration": 0,
+                    "collected_facts": [],
+                    "requires_human_escalation": False,
+                    "outcome": "",
+                }
+                with tracer.observation(
+                    "agent_graph",
+                    input={"user_input": user_input, "history_count": len(history)},
+                    metadata={"graph": "supervisor_specialist_loop"},
+                ) as graph_span:
+                    final = _graph().invoke(
+                        state,
+                        config={"configurable": {"ctx": ctx, "llm": llm, "tools": tools}},
+                    )
+                    if graph_span:
+                        graph_span.update(
+                            output={
+                                "outcome": final.get("outcome"),
+                                "iterations": final.get("n_iteration", 0),
+                                "collected_fact_count": len(final.get("collected_facts", [])),
+                            }
+                        )
                 tracer.finish_request(
                     final.get("outcome") or "answer",
                     (final.get("final_answer") or final.get("clarification_question") or "")[:500],
@@ -103,9 +123,13 @@ class AgentRunner:
                 "[%s] ✖ request FAILED after %dms — returning graceful error",
                 ctx.correlation_id, elapsed_ms,
             )
+            error_answer = (
+                "Sorry — something went wrong on our side while handling that. "
+                "Please try again, or ask to speak with a person."
+            )
+            tracer.finish_request("error", error_answer[:500])
             return AgentResult(
-                answer="Sorry — something went wrong on our side while handling that. "
-                "Please try again, or ask to speak with a person.",
+                answer=error_answer,
                 escalated=False,
             ), {"outcome": "error"}
         finally:

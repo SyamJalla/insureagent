@@ -5,6 +5,7 @@ user's conversation through this interface. Postgres now; the ABC is the swap
 point for DynamoDB later.
 """
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 
 import psycopg2
 import psycopg2.extras
@@ -30,6 +31,14 @@ class ConversationStore(ABC):
         self, conversation_id: str, user_id: str, limit: int = 50
     ) -> list[Message]: ...
 
+    @abstractmethod
+    def ensure_trace_context(
+        self,
+        conversation_id: str,
+        user_id: str,
+        create_context: Callable[[], tuple[str, str] | None],
+    ) -> tuple[str, str] | None: ...
+
 
 class PostgresConversationStore(ConversationStore):
     def __init__(self, dsn: str):
@@ -43,7 +52,9 @@ class PostgresConversationStore(ConversationStore):
         conv = Conversation(user_id=user_id)
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO conversations VALUES (%s,%s,%s,%s,%s)",
+                """INSERT INTO conversations
+                   (conversation_id, user_id, title, created_at, updated_at)
+                   VALUES (%s,%s,%s,%s,%s)""",
                 (conv.conversation_id, conv.user_id, conv.title,
                  conv.created_at, conv.updated_at),
             )
@@ -78,11 +89,13 @@ class PostgresConversationStore(ConversationStore):
             cur.execute(
                 """INSERT INTO messages
                    (message_id, conversation_id, sender, content, escalated,
-                    created_at, correlation_id)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                          created_at, correlation_id, langfuse_trace_id,
+                          langfuse_observation_id)
+                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (message.message_id, message.conversation_id, message.sender,
                  message.content, message.escalated, message.created_at,
-                 message.correlation_id),
+                      message.correlation_id, message.langfuse_trace_id,
+                      message.langfuse_observation_id),
             )
             if message.sender == "user":
                 cur.execute(
@@ -108,3 +121,36 @@ class PostgresConversationStore(ConversationStore):
             )
             rows = cur.fetchall()
         return [Message(**dict(r)) for r in reversed(rows)]
+
+    def ensure_trace_context(
+        self,
+        conversation_id: str,
+        user_id: str,
+        create_context: Callable[[], tuple[str, str] | None],
+    ) -> tuple[str, str] | None:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """SELECT langfuse_trace_id, langfuse_root_observation_id
+                   FROM conversations
+                   WHERE conversation_id=%s AND user_id=%s
+                   FOR UPDATE""",
+                (conversation_id, user_id),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            trace_id = row["langfuse_trace_id"]
+            root_observation_id = row["langfuse_root_observation_id"]
+            if trace_id and root_observation_id:
+                return trace_id, root_observation_id
+
+            trace_context = create_context()
+            if trace_context is None:
+                return None
+            cur.execute(
+                """UPDATE conversations
+                   SET langfuse_trace_id=%s, langfuse_root_observation_id=%s
+                   WHERE conversation_id=%s AND user_id=%s""",
+                (trace_context[0], trace_context[1], conversation_id, user_id),
+            )
+            return trace_context

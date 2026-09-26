@@ -13,7 +13,6 @@ class GraphState(TypedDict, total=False):
     # Input & context
     user_input: str
     conversation_history: str          # single writer: the runner. Specialists
-                                       # write only collected_facts (parallel-safe)
 
     # Supervisor routing (LLM proposes; the routing function decides)
     next_agent: str
@@ -21,6 +20,7 @@ class GraphState(TypedDict, total=False):
     justification: str
     complexity: Complexity | None      # written every turn; routed on only when flag on
     n_iteration: int
+    plan: list[dict]
 
     # Work products
     collected_facts: Annotated[list[str], _append]

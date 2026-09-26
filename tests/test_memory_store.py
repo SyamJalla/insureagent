@@ -65,8 +65,17 @@ def test_delete_all_clears_user_only(store):
 def test_scratch_roundtrip():
     stm = PostgresShortTermMemory(get_settings().app_db_url)
     cid = f"scratch-test-{uuid.uuid4().hex[:6]}"
-    assert stm.get(cid) == {}
+    sid = f"session-{uuid.uuid4().hex[:6]}"
+
+    assert stm.get(conversation_id=cid) == {}
     stm.set(cid, {"pending_action": "pay-premium", "step": 2})
     assert stm.get(cid)["step"] == 2
+
+    stm.set(session_id=sid, state={"pending_action": "renew-policy", "step": 3})
+    assert stm.get(session_id=sid)["step"] == 3
+
+    stm.set(session_id=sid, state={}, ttl_s=0)  # immediate expiry
+    assert stm.get(session_id=sid) == {}
+
     stm.set(cid, {}, ttl_s=0)  # immediate expiry
     assert stm.get(cid) == {}

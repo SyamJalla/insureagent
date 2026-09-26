@@ -7,7 +7,7 @@ bcrypt
 psycopg2-binary
 langgraph            # pulls langchain-core
 openai
-langfuse
+langfuse==4.15.4
 chromadb             # embeddings via Chroma's built-in ONNX MiniLM
 pyyaml
 

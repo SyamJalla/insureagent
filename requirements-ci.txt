@@ -11,7 +11,7 @@ python-jose[cryptography]
 langgraph
 langchain-core
 openai
-langfuse
+langfuse==4.15.4
 chromadb
 pyyaml
 numpy

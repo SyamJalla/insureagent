@@ -27,4 +27,12 @@ def search_faq(ctx: RequestContext, query: str):
             "answer": meta.get("answer", doc),
             "source": "insuranceQA-v2 (industry-general)",
         })
+    from app.tracing import get_tracer
+
+    get_tracer().log_rag_retrieval(
+        query=query,
+        collection=get_settings().faq_collection_name,
+        results=results,
+        output=out,
+    )
     return out

@@ -58,6 +58,44 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
     ctx, llm, _tools = _cfg(config)
     n = state.get("n_iteration", 0) + 1
     logger.info("[%s] 🧭 supervisor | iteration=%d", ctx.correlation_id, n)
+
+    # 1. Execution Phase (Check for existing plan)
+    plan = state.get("plan")
+    if plan is not None:
+        if len(plan) > 0:
+            step = plan.pop(0)
+            next_agent = step.get("next_agent", "end")
+            logger.info("[%s] 🧭 plan pop → %s", ctx.correlation_id, next_agent)
+            
+            if next_agent == "respond":
+                return {
+                    "n_iteration": n,
+                    "final_answer": step.get("response") or _FALLBACK_REPLY,
+                    "outcome": "answer",
+                    "plan": plan
+                }
+            
+            try:
+                complexity = Complexity(step.get("complexity", "standard"))
+            except ValueError:
+                complexity = Complexity.STANDARD
+                
+            return {
+                "n_iteration": n,
+                "next_agent": next_agent,
+                "task": step.get("task", state.get("user_input", "")),
+                "justification": step.get("justification", ""),
+                "complexity": complexity,
+                "plan": plan
+            }
+        else:
+            logger.info("[%s] 🧭 plan empty → end", ctx.correlation_id)
+            return {
+                "n_iteration": n,
+                "next_agent": "end",
+                "plan": plan
+            }
+
     if n > MAX_ITERATIONS:
         logger.warning(
             "[%s] 🧭 iteration cap (%d) hit → final answer with human offer",
@@ -130,7 +168,25 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
             "outcome": "answer",
         }
 
-    next_agent = decision.get("next_agent", "")
+    new_plan = decision.get("plan", [])
+    
+    # Backward compatibility if model still returns old schema
+    if not new_plan and "next_agent" in decision:
+        new_plan = [decision]
+
+    if not new_plan:
+        logger.warning(
+            "[%s] 🧭 decision=empty plan → canned fallback", ctx.correlation_id
+        )
+        return {
+            "n_iteration": n,
+            "final_answer": _FALLBACK_REPLY,
+            "outcome": "answer",
+        }
+
+    step = new_plan.pop(0)
+    next_agent = step.get("next_agent", "")
+    
     if next_agent not in _VALID_AGENTS:
         logger.warning(
             "[%s] 🧭 decision=invalid agent %r → canned fallback", ctx.correlation_id, next_agent
@@ -139,6 +195,7 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
             "n_iteration": n,
             "final_answer": _FALLBACK_REPLY,
             "outcome": "answer",
+            "plan": new_plan
         }
 
     # Direct response: small talk, capability questions, out-of-scope. The
@@ -147,23 +204,25 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
         logger.info("[%s] 🧭 decision=respond (direct, no specialist)", ctx.correlation_id)
         return {
             "n_iteration": n,
-            "final_answer": decision.get("response") or _FALLBACK_REPLY,
+            "final_answer": step.get("response") or _FALLBACK_REPLY,
             "outcome": "answer",
+            "plan": new_plan
         }
 
     try:
-        complexity = Complexity(decision.get("complexity", "standard"))
+        complexity = Complexity(step.get("complexity", "standard"))
     except ValueError:
         complexity = Complexity.STANDARD
     logger.info(
         "[%s] 🧭 decision=route → %s | complexity=%s | task=%r | why=%r",
         ctx.correlation_id, next_agent, complexity.value,
-        decision.get("task", "")[:90], decision.get("justification", "")[:90],
+        step.get("task", "")[:90], step.get("justification", "")[:90],
     )
     return {
         "n_iteration": n,
         "next_agent": next_agent,
-        "task": decision.get("task", state.get("user_input", "")),
-        "justification": decision.get("justification", ""),
+        "task": step.get("task", state.get("user_input", "")),
+        "justification": step.get("justification", ""),
         "complexity": complexity,
+        "plan": new_plan
     }

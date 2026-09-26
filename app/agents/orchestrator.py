@@ -10,32 +10,63 @@ from app.agents.specialists import BillingAgent, ClaimsAgent, GeneralHelpAgent, 
 from app.agents.state import GraphState
 from app.agents.supervisor import supervisor_node
 from app.agents.terminal import escalation_node, final_answer_node
+from app.tracing import get_tracer
 
 
 def route_after_supervisor(state: GraphState) -> str:
     """Priority-ordered decision — plain code (LLMs reason; systems decide)."""
     if state.get("outcome") == "clarification":
-        return "clarify"
-    if state.get("outcome") == "answer":
-        return "direct"  # supervisor answered directly (small talk / out-of-scope)
-    if state.get("requires_human_escalation"):
-        return "human_escalation_agent"
-    next_agent = state.get("next_agent", "general_help_agent")
-    if next_agent == "end":
-        return "final_answer_agent"
-    return next_agent
+        route = "clarify"
+    elif state.get("outcome") == "answer":
+        route = "direct"  # supervisor answered directly (small talk / out-of-scope)
+    elif state.get("requires_human_escalation"):
+        route = "human_escalation_agent"
+    else:
+        next_agent = state.get("next_agent", "general_help_agent")
+        route = "final_answer_agent" if next_agent == "end" else next_agent
+    get_tracer().log_route(
+        next_agent=route, outcome=state.get("outcome"), state=dict(state)
+    )
+    return route
+
+
+def _traced_node(name: str, node):
+    def invoke(state, config):
+        tracer = get_tracer()
+        with tracer.observation(
+            f"graph:{name}",
+            input={
+                "user_input": state.get("user_input", ""),
+                "task": state.get("task", ""),
+                "iteration": state.get("n_iteration", 0),
+            },
+            metadata={"node": name},
+        ) as span:
+            output = node(state, config)
+            if span:
+                # Record both output and post‑execution state snapshot.
+                try:
+                    span.update(output=output, metadata={"post_state": dict(state)})
+                except Exception:
+                    # Fallback – just record the output if state cannot be serialized.
+                    span.update(output=output)
+            # Log a dedicated state span for deeper inspection.
+            tracer.log_state(node=name, state=dict(state))
+            return output
+
+    return invoke
 
 
 def build_graph():
     g = StateGraph(GraphState)
 
-    g.add_node("supervisor_agent", supervisor_node)
-    g.add_node("policy_agent", PolicyAgent())
-    g.add_node("billing_agent", BillingAgent())
-    g.add_node("claims_agent", ClaimsAgent())
-    g.add_node("general_help_agent", GeneralHelpAgent())
-    g.add_node("final_answer_agent", final_answer_node)
-    g.add_node("human_escalation_agent", escalation_node)
+    g.add_node("supervisor_agent", _traced_node("supervisor_agent", supervisor_node))
+    g.add_node("policy_agent", _traced_node("policy_agent", PolicyAgent()))
+    g.add_node("billing_agent", _traced_node("billing_agent", BillingAgent()))
+    g.add_node("claims_agent", _traced_node("claims_agent", ClaimsAgent()))
+    g.add_node("general_help_agent", _traced_node("general_help_agent", GeneralHelpAgent()))
+    g.add_node("final_answer_agent", _traced_node("final_answer_agent", final_answer_node))
+    g.add_node("human_escalation_agent", _traced_node("human_escalation_agent", escalation_node))
 
     g.set_entry_point("supervisor_agent")
     g.add_conditional_edges(

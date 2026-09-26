@@ -46,13 +46,25 @@ class MemoryStore(ABC):
 
 
 class ShortTermMemory(ABC):
-    """Per-conversation working state. Postgres now; Redis is the swap-in."""
+    """Single-session working state with conversation_id retained as a legacy
+    fallback key. A login session should win so a user keeps one scratch state
+    across multiple conversations during a single auth session."""
 
     @abstractmethod
-    def get(self, conversation_id: str) -> dict: ...
+    def get(
+        self,
+        conversation_id: str | None = None,
+        session_id: str | None = None,
+    ) -> dict: ...
 
     @abstractmethod
-    def set(self, conversation_id: str, state: dict, ttl_s: int = 3600) -> None: ...
+    def set(
+        self,
+        conversation_id: str | None = None,
+        state: dict | None = None,
+        session_id: str | None = None,
+        ttl_s: int = 3600,
+    ) -> None: ...
 
 
 def _row_to_item(row) -> MemoryItem:
@@ -178,23 +190,45 @@ class PostgresShortTermMemory(ShortTermMemory):
     def __init__(self, dsn: str):
         self._dsn = dsn
 
-    def get(self, conversation_id: str) -> dict:
+    @staticmethod
+    def _state_key(*, conversation_id: str | None = None, session_id: str | None = None) -> str | None:
+        return session_id or conversation_id
+
+    def get(
+        self,
+        conversation_id: str | None = None,
+        session_id: str | None = None,
+    ) -> dict:
+        key = self._state_key(conversation_id=conversation_id, session_id=session_id)
+        if key is None:
+            return {}
         with psycopg2.connect(self._dsn) as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT state FROM conversation_scratch WHERE conversation_id=%s AND expires_at > now()",
-                (conversation_id,),
+                (key,),
             )
             row = cur.fetchone()
         return row[0] if row else {}
 
-    def set(self, conversation_id: str, state: dict, ttl_s: int = 3600) -> None:
+    def set(
+        self,
+        conversation_id: str | None = None,
+        state: dict | None = None,
+        session_id: str | None = None,
+        ttl_s: int = 3600,
+    ) -> None:
+        if state is None:
+            raise ValueError("state is required")
+        key = self._state_key(conversation_id=conversation_id, session_id=session_id)
+        if key is None:
+            raise ValueError("either conversation_id or session_id is required")
         with psycopg2.connect(self._dsn) as conn, conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO conversation_scratch (conversation_id, state, expires_at)
                    VALUES (%s, %s, now() + %s * interval '1 second')
                    ON CONFLICT (conversation_id)
                    DO UPDATE SET state = EXCLUDED.state, expires_at = EXCLUDED.expires_at""",
-                (conversation_id, json.dumps(state), ttl_s),
+                (key, json.dumps(state), ttl_s),
             )
 
 

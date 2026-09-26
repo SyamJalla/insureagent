@@ -240,6 +240,9 @@ def test_blocked_turn_never_reaches_runner(monkeypatch):
         def append_message(self, message, user_id):
             self.appended.append(message)
 
+        def ensure_trace_context(self, conversation_id, user_id, create_context):
+            return None
+
     class _FakeRunner:
         def run(self, *a, **k):
             raise AssertionError("runner must not run on a blocked turn")
