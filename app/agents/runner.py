@@ -15,7 +15,8 @@ logger = logging.getLogger("insureagent.runner")
 from app.agents.orchestrator import build_graph
 from app.auth.models import RequestContext
 from app.conversations.models import Message
-from app.llm.gateway import build_default_gateway
+from app.llm.gateway import build_gateway_for_tier
+from app.llm.tier_router import TierRouter
 from app.tools.gateway import ToolGateway
 from app.tracing import get_tracer
 
@@ -31,8 +32,14 @@ def _graph():
 
 
 @lru_cache
-def _gateways():
-    return build_default_gateway(), ToolGateway()
+def _gateways(tier: int = 1):
+    """Return the selected LLM gateway and shared tool gateway."""
+    return build_gateway_for_tier(tier), _tool_gateway()
+
+
+@lru_cache
+def _tool_gateway():
+    return ToolGateway()
 
 
 def _render_history(ctx: RequestContext, history: list[Message], user_input: str) -> str:
@@ -54,12 +61,14 @@ def _render_history(ctx: RequestContext, history: list[Message], user_input: str
 
 
 class AgentRunner:
-    def run(self, ctx: RequestContext, history: list[Message], user_input: str) -> AgentResult:
-        result, _ = self.run_detailed(ctx, history, user_input)
+    def run(
+        self, ctx: RequestContext, history: list[Message], user_input: str, tier: int = 1
+    ) -> AgentResult:
+        result, _ = self.run_detailed(ctx, history, user_input, tier=tier)
         return result
 
     def run_detailed(
-        self, ctx: RequestContext, history: list[Message], user_input: str
+        self, ctx: RequestContext, history: list[Message], user_input: str, tier: int = 1
     ) -> tuple[AgentResult, dict]:
         """run() plus the final graph state — used by the eval harness to
         inspect which agents ran (collected_facts prefixes) and outcomes."""
@@ -68,9 +77,14 @@ class AgentRunner:
             "[%s] ▶ request start | user=%s role=%s | input=%r",
             ctx.correlation_id, ctx.user.user_id, ctx.user.role.value, user_input[:120],
         )
-        llm, tools = _gateways()
         tracer = get_tracer()
         try:
+            tier3_agent_override = None
+            model_override = None
+            if tier == 3:
+                tier3_agent_override, model_override = TierRouter(tier=3).resolve(user_input)
+            llm = build_gateway_for_tier(tier, model_override=model_override)
+            tools = _tool_gateway()
             with tracer.request_trace(ctx, user_input):
                 conversation_history = _render_history(ctx, history, user_input)
                 from app.config import get_settings
@@ -95,6 +109,7 @@ class AgentRunner:
                     "collected_facts": [],
                     "requires_human_escalation": False,
                     "outcome": "",
+                    "tier3_agent_override": tier3_agent_override,
                 }
                 with tracer.observation(
                     "agent_graph",
@@ -103,7 +118,9 @@ class AgentRunner:
                 ) as graph_span:
                     final = _graph().invoke(
                         state,
-                        config={"configurable": {"ctx": ctx, "llm": llm, "tools": tools}},
+                        config={"configurable": {
+                            "ctx": ctx, "llm": llm, "tools": tools, "tier": tier,
+                        }},
                     )
                     if graph_span:
                         graph_span.update(

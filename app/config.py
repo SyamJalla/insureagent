@@ -6,6 +6,7 @@ Nothing elsewhere in the app reads os.getenv directly.
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,7 +18,7 @@ class Settings(BaseSettings):
     environment: str = "dev"
 
     # Secrets (from .env)
-    openai_api_key: str
+    openai_api_key: str | None = None
     jwt_secret: str = "change-me-in-.env"
     langfuse_secret_key: str | None = None
     langfuse_public_key: str | None = None
@@ -39,10 +40,31 @@ class Settings(BaseSettings):
     # LLM gateway — tier → concrete model (models change; code shouldn't)
     model_fast: str = "gpt-4o-mini"
     model_standard: str = "gpt-4o"
-    model_reasoning: str = "gpt-4o"  # upgrade when a reasoning tier is adopted
+    model_reasoning: str = "gpt-4o"
     # Complexity-based routing (v2): built and tested, shipped OFF.
     # Flip only alongside an eval run — it changes cost/quality baselines.
     complexity_routing_enabled: bool = False
+
+    # ── 3-Tier model configuration ─────────────────────────────────────
+    # 1 = OpenAI  |  2 = Groq open-source  |  3 = Laya-routed Groq
+    active_tier: int = Field(default=1, ge=1, le=3)
+
+    # Tiers 1 and 2 assign models by graph role: supervisor uses STANDARD,
+    # while specialist agents use FAST.
+    tier1_supervisor_model: str = "gpt-4o-mini"
+    tier1_specialist_model: str = "gpt-5.1-mini"
+
+    # Tier 2 – Groq open-source models
+    groq_api_key: str | None = None
+    tier2_supervisor_model: str = "openai/gpt-oss-120b"
+    tier2_specialist_model: str = "openai/gpt-oss-20b"
+
+    # Tier 3 – Laya classifier (router) + Groq workers (execution)
+    laya_api_key: str | None = None
+    laya_base_url: str = "https://api.laya.ai"
+    tier3_router_model: str = "laya-classifier-v1"   # env: TIER3_ROUTER_MODEL
+    tier3_worker_model: str = "openai/gpt-oss-20b"  # env: TIER3_WORKER_MODEL
+    tier3_confidence_threshold: float = Field(default=0.85, ge=0, le=1)
 
     # Memory block: the write path (summarizer → memory_items) is always on;
     # this flag gates the READ path (memory injected into prompts).

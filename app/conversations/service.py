@@ -31,7 +31,9 @@ class ConversationService:
             raise ConversationNotFound(conversation_id)
         return self._store.get_messages(conversation_id, ctx.user.user_id)
 
-    def send_message(self, ctx: RequestContext, conversation_id: str, content: str) -> Message:
+    def send_message(
+        self, ctx: RequestContext, conversation_id: str, content: str, tier: int = 1
+    ) -> Message:
         if self._store.get(conversation_id, ctx.user.user_id) is None:
             raise ConversationNotFound(conversation_id)
         ctx.conversation_id = conversation_id  # completes the ID hierarchy for tracing
@@ -76,7 +78,7 @@ class ConversationService:
                 self._store.append_message(reply, ctx.user.user_id)
                 return reply
 
-            result = self._runner.run(ctx, history, content)
+            result = self._runner.run(ctx, history, content, tier=tier)
 
             reply = Message(
                 conversation_id=conversation_id,
@@ -88,8 +90,9 @@ class ConversationService:
                 langfuse_observation_id=getattr(trace, "id", None),
             )
             self._store.append_message(reply, ctx.user.user_id)
-            self._summarize(ctx, conversation_id)
+            self._summarize(ctx, conversation_id, tier)
             return reply
+
 
     def _ensure_trace_context(
         self, ctx: RequestContext, conversation_id: str
@@ -105,15 +108,17 @@ class ConversationService:
             lambda: tracer.create_conversation_trace(ctx, conversation_id),
         )
 
-    def _summarize(self, ctx: RequestContext, conversation_id: str) -> None:
+    def _summarize(self, ctx: RequestContext, conversation_id: str, tier: int) -> None:
         """Memory write path — never breaks the chat (guarded inside)."""
         from app.agents.runner import _gateways
         from app.memory.store import get_memory_store
         from app.memory.summarizer import Summarizer
 
-        llm, _tools = _gateways()
+        llm, _tools = _gateways(tier)
         messages = self._store.get_messages(conversation_id, ctx.user.user_id, limit=50)
-        Summarizer(get_memory_store(), llm).maybe_summarize(ctx, conversation_id, messages)
+        Summarizer(get_memory_store(), llm).maybe_summarize(
+            ctx, conversation_id, messages, tier=tier
+        )
 
     def record_feedback(
         self, ctx: RequestContext, conversation_id: str, message_id: str,

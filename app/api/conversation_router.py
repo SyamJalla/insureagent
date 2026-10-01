@@ -1,6 +1,6 @@
 """Conversation endpoints."""
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.agents.runner import AgentRunner
 from app.auth.dependency import get_request_context
@@ -20,6 +20,7 @@ def get_service() -> ConversationService:
 
 class SendMessageRequest(BaseModel):
     content: str
+    tier: int | None = Field(default=None, ge=1, le=3)  # overrides ACTIVE_TIER
 
 
 class FeedbackRequest(BaseModel):
@@ -54,7 +55,6 @@ def get_messages(
     except ConversationNotFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "conversation not found")
 
-
 @router.post("/{conversation_id}/messages/{message_id}/feedback", status_code=status.HTTP_204_NO_CONTENT)
 def message_feedback(
     conversation_id: str,
@@ -78,7 +78,9 @@ def send_message(
     ctx: RequestContext = Depends(get_request_context),
     svc: ConversationService = Depends(get_service),
 ) -> Message:
+    # Resolve the effective tier: per-request override → env default
+    effective_tier = body.tier or get_settings().active_tier
     try:
-        return svc.send_message(ctx, conversation_id, body.content)
+        return svc.send_message(ctx, conversation_id, body.content, tier=effective_tier)
     except ConversationNotFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "conversation not found")

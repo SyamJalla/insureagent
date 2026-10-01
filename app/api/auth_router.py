@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from app.auth.dependency import get_auth_provider, get_request_context
 from app.auth.models import RequestContext, TokenPair
 from app.auth.provider import AuthenticationError, AuthProvider
+from app.config import get_settings
 
 router = APIRouter(tags=["auth"])
 logger = logging.getLogger("insureagent.auth")
@@ -34,6 +35,7 @@ def me(ctx: RequestContext = Depends(get_request_context)) -> dict:
     return {
         "user": ctx.user.model_dump(),
         "policy_count": len(ctx.owned_policy_numbers),
+        "active_tier": get_settings().active_tier,
     }
 
 

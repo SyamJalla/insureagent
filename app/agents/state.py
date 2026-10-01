@@ -16,6 +16,7 @@ class GraphState(TypedDict, total=False):
 
     # Supervisor routing (LLM proposes; the routing function decides)
     next_agent: str
+    tier3_agent_override: str | None
     task: str
     justification: str
     complexity: Complexity | None      # written every turn; routed on only when flag on

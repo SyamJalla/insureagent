@@ -37,7 +37,7 @@ def final_answer_node(state: dict, config: RunnableConfig) -> dict:
     known = "\n".join(facts) if facts else "(no new specialist findings this turn)"
     known += "\n\n[Conversation history]\n" + state.get("conversation_history", "")
     system = render(
-        load_prompt("final_answer_agent"),
+        load_prompt("final_answer_agent", tier=config["configurable"].get("tier", 0)),
         user_query=state.get("user_input", ""),
         specialist_response=known,
     ) + _GROUNDING_RULES
@@ -62,7 +62,7 @@ def escalation_node(state: dict, config: RunnableConfig) -> dict:
         ctx.correlation_id, state.get("escalation_reason", "supervisor decision"),
     )
     system = render(
-        load_prompt("human_escalation_agent"),
+        load_prompt("human_escalation_agent", tier=config["configurable"].get("tier", 0)),
         task=state.get("task", state.get("user_input", "")),
         conversation_history=state.get("conversation_history", ""),
     )

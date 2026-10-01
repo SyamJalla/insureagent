@@ -1,0 +1,39 @@
+prompt:
+  task: insurance_request_classification
+
+  labels:
+    billing:
+      description: "Requests about bills, payments, amounts owed, or invoice due dates."
+
+    policy:
+      description: "Requests about insurance coverage, policy details, premiums, renewals, or endorsements."
+
+    claims:
+      description: "Requests about filing a claim, claim status, claim documents, or claim settlement."
+
+    fallback:
+      description: "General insurance questions, greetings, unclear requests, or requests spanning multiple domains."
+
+  rules:
+    - "Select exactly one label: billing, policy, claims, or fallback."
+    - "For multiple domains, select the first clearly actionable insurance task."
+    - "Use fallback when no clearly actionable insurance task can be identified."
+    - "Do not answer, explain, or otherwise respond to the user's request."
+
+  output:
+    format: json
+    schema:
+      decision:
+        type: string
+        enum:
+          - billing
+          - policy
+          - claims
+          - fallback
+      confidence:
+        type: number
+        minimum: 0.0
+        maximum: 1.0
+    required:
+      - decision
+      - confidence

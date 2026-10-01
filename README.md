@@ -6,7 +6,7 @@ Domain model below) and chat with an AI assistant. A LangGraph supervisor agent
 routes each question to a specialist agent (policy, billing, claims, general help, or
 human escalation); a final answer agent composes the response. The backend resolves each
 user's identity server-side, so a customer asking "what is my premium?" gets the answer
-for *their own* policies without ever typing a policy number.
+for _their own_ policies without ever typing a policy number.
 
 Specialist agents answer from two local data sources: a **PostgreSQL** database (synthetic
 customer/policy/claim/billing records plus users and conversations), and a **ChromaDB**
@@ -42,6 +42,16 @@ python scripts/fetch_models.py            # non-pip models: injection ~700MB, em
 
    ```
    OPENAI_API_KEY=sk-...
+   TIER1_SUPERVISOR_MODEL=gpt-4o-mini
+   TIER1_SPECIALIST_MODEL=gpt-5.1-mini
+   ACTIVE_TIER=1
+   GROQ_API_KEY=                  # required for Tier 2 or Tier 3
+   TIER2_SUPERVISOR_MODEL=openai/gpt-oss-120b
+   TIER2_SPECIALIST_MODEL=openai/gpt-oss-20b
+   LAYA_API_KEY=                  # optional; without it Tier 3 falls back to Tier 2
+   LAYA_BASE_URL=https://api.laya.ai
+   TIER3_ROUTER_MODEL=laya-classifier-v1
+   TIER3_WORKER_MODEL=openai/gpt-oss-20b
    JWT_SECRET=<openssl rand -hex 32>
    APP_DB_URL=postgresql://postgres:root@localhost:5433/insureagent
    MEMORY_ENABLED=true                # long-term memory read path (write path is always on)
@@ -50,10 +60,17 @@ python scripts/fetch_models.py            # non-pip models: injection ~700MB, em
    LANGFUSE_BASE_URL=http://localhost:3000
    ```
 
-   Requires a local PostgreSQL (any recent version) reachable at `APP_DB_URL`.
-   All data lives there: app-owned tables (users, conversations, messages) and
-   the synthetic enterprise tables (customers, agents, policies, billing,
-   payments, claims).
+The chat header's tier selector overrides `ACTIVE_TIER` for each request.
+Tiers 1 and 2 use separate supervisor and specialist models. Tier 1 uses
+OpenAI; Tier 2 uses open-source Groq models; Tier 3 classifies the first domain
+with Laya and uses an open-source Groq model for agent execution. Canonical prompts
+live in `prompts/tier1/`; Tier 2 and Tier 3 overrides live in their respective
+directories and fall back to the Tier 1 prompt when an override is absent.
+
+Requires a local PostgreSQL (any recent version) reachable at `APP_DB_URL`.
+All data lives there: app-owned tables (users, conversations, messages) and
+the synthetic enterprise tables (customers, agents, policies, billing,
+payments, claims).
 
 2. **Create/update the Postgres schema** (also creates the database itself;
    idempotent — run it after every pull that adds a migration):
@@ -103,7 +120,7 @@ An imaginary insurer; all data synthetic. The rules that shape the code:
 - **Person vs. policy:** a person has one identity and role; each policy has its own
   lifecycle phase. One person can hold policies in different phases at once.
 - **Roles:** `prospect` (registered, no policy) · `customer` (holds ≥1 policy; access
-  always scoped to *their* policies) · `agent` (external partner; sees only their book
+  always scoped to _their_ policies) · `agent` (external partner; sees only their book
   of business — the customers on policies carrying their `agent_id`; earns commissions
   on those policies; `agent_id NULL` = direct policy) · `employee` (CSR; receives
   escalations, audited) · `admin`. AI agents are never a principal — they act with the
@@ -114,7 +131,7 @@ An imaginary insurer; all data synthetic. The rules that shape the code:
   approved/rejected → settled) → renewal due/grace → lapsed | cancelled/surrendered |
   matured → win-back. Pre-application phases attach to the person.
 - **Authentication vs. authorization:** one login flow for every role — customer
-  status is *authorization* data, not an authentication branch. RBAC (role → which
+  status is _authorization_ data, not an authentication branch. RBAC (role → which
   capabilities) + ABAC (ownership/phase → which records), enforced in the tool layer,
   never by the LLM: **LLMs reason; systems decide.**
 - **RAG boundary:** vector store holds general knowledge only; customer-specific facts
@@ -159,15 +176,15 @@ docstrings under `app/agents/` — start at `orchestrator.py` and `runner.py`.
 
 ## Layout
 
-| Path | Contents |
-| --- | --- |
-| `app/` | The application package: `api/` routers, `auth/`, `conversations/`, `agents/` (supervisor, specialists, orchestrator, runner), `tools/` (gateway + tools, RBAC/ownership), `llm/` (model gateway + router), `memory/` (store, summarizer, retriever), `guardrails/` (input-safety pipeline, one file per check), `tracing.py` (Langfuse), `static/` chat UI, `config.py`. |
-| `scripts/` | `db/migrate.py` + `db/migrations/*.sql` (all DDL), `seed_enterprise.py` (synthetic data), `seed_users.py` (demo accounts). |
-| `create_vectordb.py` | Builds/rebuilds the FAQ vector store (drop + re-ingest, deterministic; run with the app stopped). |
-| `prompts/` | One YAML prompt file per agent. |
-| `datasources/` | Chroma vector store (FAQ + user-memory embeddings). Git-ignored: derived/user data. |
-| `docs/` | Reference architecture diagram. |
-| `docker-compose.yml` | Self-hosted Langfuse stack for tracing. |
+| Path                 | Contents                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app/`               | The application package: `api/` routers, `auth/`, `conversations/`, `agents/` (supervisor, specialists, orchestrator, runner), `tools/` (gateway + tools, RBAC/ownership), `llm/` (model gateway + router), `memory/` (store, summarizer, retriever), `guardrails/` (input-safety pipeline, one file per check), `tracing.py` (Langfuse), `static/` chat UI, `config.py`. |
+| `scripts/`           | `db/migrate.py` + `db/migrations/*.sql` (all DDL), `seed_enterprise.py` (synthetic data), `seed_users.py` (demo accounts).                                                                                                                                                                                                                                                |
+| `create_vectordb.py` | Builds/rebuilds the FAQ vector store (drop + re-ingest, deterministic; run with the app stopped).                                                                                                                                                                                                                                                                         |
+| `prompts/`           | Tier 1 canonical YAML prompts and Tier 2/3 overrides.                                                                                                                                                                                                                                                                                                                     |
+| `datasources/`       | Chroma vector store (FAQ + user-memory embeddings). Git-ignored: derived/user data.                                                                                                                                                                                                                                                                                       |
+| `docs/`              | Reference architecture diagram.                                                                                                                                                                                                                                                                                                                                           |
+| `docker-compose.yml` | Self-hosted Langfuse stack for tracing.                                                                                                                                                                                                                                                                                                                                   |
 
 ## Known rough edges
 
@@ -175,7 +192,7 @@ docstrings under `app/agents/` — start at `orchestrator.py` and `runner.py`.
   calls); fine for demo scale, revisit before load testing.
 - The full Langfuse Docker stack is memory-hungry; when developing without needing
   traces, `docker compose stop` frees several GB (the app degrades gracefully).
-- Prompt source is a flag (`PROMPT_SOURCE`): `file` (default, prompts/*.yaml) or
+- Prompt source is a flag (`PROMPT_SOURCE`): `file` (default, tier-specific YAML files) or
   `langfuse` (Prompt Management, with file fallback; seed via `scripts/push_prompts.py`).
 - Complexity-based model routing is built but OFF (`COMPLEXITY_ROUTING_ENABLED`);
   flip only alongside an eval run.

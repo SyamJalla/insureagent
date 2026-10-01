@@ -39,14 +39,18 @@ class Summarizer:
         self._memory = memory
         self._llm = llm
 
-    def maybe_summarize(self, ctx, conversation_id: str, messages: list[Message]) -> None:
+    def maybe_summarize(
+        self, ctx, conversation_id: str, messages: list[Message], tier: int = 1
+    ) -> None:
         """Call after appending a reply. Cheap check first, LLM only when due."""
         try:
-            self._maybe_summarize(ctx, conversation_id, messages)
+            self._maybe_summarize(ctx, conversation_id, messages, tier)
         except Exception:
             logger.exception("[%s] summarization failed — chat unaffected", ctx.correlation_id)
 
-    def _maybe_summarize(self, ctx, conversation_id: str, messages: list[Message]) -> None:
+    def _maybe_summarize(
+        self, ctx, conversation_id: str, messages: list[Message], tier: int
+    ) -> None:
         dsn = get_settings().app_db_url
         with psycopg2.connect(dsn) as conn, conn.cursor() as cur:
             cur.execute(
@@ -67,7 +71,7 @@ class Summarizer:
             LlmRequest(
                 agent="memory_summarizer",
                 messages=[
-                    {"role": "system", "content": load_prompt("memory_summarizer")},
+                    {"role": "system", "content": load_prompt("memory_summarizer", tier=tier)},
                     {"role": "user", "content": transcript},
                 ],
             ),

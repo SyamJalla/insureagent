@@ -81,14 +81,58 @@ class LlmGateway:
         raise RuntimeError(f"LLM call failed for {request.agent} after retries") from last_error
 
 
-def build_default_gateway() -> LlmGateway:
+def build_default_gateway(model_override: str | None = None) -> LlmGateway:
     s = get_settings()
+    if not s.openai_api_key:
+        raise RuntimeError("OPENAI_API_KEY is required to use Tier 1.")
+    models = {
+        ModelTier.FAST: s.tier1_specialist_model,
+        ModelTier.STANDARD: s.tier1_supervisor_model,
+        ModelTier.REASONING: s.tier1_specialist_model,
+    }
+    if model_override:
+        models[ModelTier.FAST] = model_override
     return LlmGateway(
         provider=OpenAiProvider(s.openai_api_key),
         router=ModelRouter(s.complexity_routing_enabled),
+        models=models,
+    )
+
+
+def build_groq_gateway(specialist_model: str, supervisor_model: str | None = None) -> LlmGateway:
+    """Build a Groq gateway, optionally assigning a separate supervisor model."""
+    from app.llm.provider import GroqProvider
+
+    s = get_settings()
+    if not s.groq_api_key:
+        raise RuntimeError(
+            "GROQ_API_KEY is required to use Tier 2 or Tier 3. "
+            "Set it in .env and restart."
+        )
+    return LlmGateway(
+        provider=GroqProvider(s.groq_api_key),
+        router=ModelRouter(complexity_routing_enabled=False),
         models={
-            ModelTier.FAST: s.model_fast,
-            ModelTier.STANDARD: s.model_standard,
-            ModelTier.REASONING: s.model_reasoning,
+            ModelTier.FAST: specialist_model,
+            ModelTier.STANDARD: supervisor_model or specialist_model,
+            ModelTier.REASONING: specialist_model,
         },
     )
+
+
+def build_gateway_for_tier(tier: int, model_override: str | None = None) -> LlmGateway:
+    """Select and build the appropriate gateway based on the active tier.
+
+    Tier 1 → OpenAI (separate supervisor and specialist models)
+    Tier 2 → Groq   (separate supervisor and specialist models)
+    Tier 3 → Laya classifier + Groq open-source worker
+    """
+    s = get_settings()
+    if tier == 2:
+        return build_groq_gateway(
+            s.tier2_specialist_model,
+            supervisor_model=s.tier2_supervisor_model,
+        )
+    if tier == 3:
+        return build_groq_gateway(model_override or s.tier3_worker_model)
+    return build_default_gateway()  # tier 1 default

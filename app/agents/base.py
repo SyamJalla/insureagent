@@ -24,11 +24,11 @@ class _SafeDict(dict):
         return ""
 
 
-def load_prompt(name: str) -> str:
+def load_prompt(name: str, tier: int = 0) -> str:
     """Delegates to the configured PromptSource (file default, Langfuse optional)."""
     from app.agents.prompt_source import get_prompt_source
 
-    return get_prompt_source().get(name)
+    return get_prompt_source(tier=tier).get(name)
 
 
 def render(template: str, **fields) -> str:
@@ -52,7 +52,7 @@ class SpecialistAgent:
             ctx.correlation_id, self.name, state.get("task", "")[:100],
         )
         system = render(
-            load_prompt(self.prompt_name),
+            load_prompt(self.prompt_name, tier=config["configurable"].get("tier", 0)),
             task=state.get("task", state.get("user_input", "")),
             conversation_history=state.get("conversation_history", ""),
             **self.extra_fields(state, ctx, tools),

@@ -1,8 +1,7 @@
 """Supervisor node: intent, routing proposal, complexity score, clarification.
 
-The LLM proposes (next_agent/task/complexity JSON, or an ask_user call);
-the orchestrator's routing function decides. No tool-gateway access here —
-ask_user is a control-flow pseudo-tool, not a data tool.
+The LLM proposes JSON; the orchestrator's routing function decides. The
+supervisor has no tool-gateway access.
 """
 import json
 import logging
@@ -16,22 +15,6 @@ from app.agents.base import load_prompt, render, _cfg
 from app.llm.models import Complexity, LlmRequest
 
 MAX_ITERATIONS = 3
-
-_ASK_USER_SPEC = {
-    "type": "function",
-    "function": {
-        "name": "ask_user",
-        "description": "Ask the user ONE short clarification question when essential info is missing.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "question": {"type": "string"},
-                "missing_info": {"type": "string"},
-            },
-            "required": ["question"],
-        },
-    },
-}
 
 _VALID_AGENTS = {
     "policy_agent", "billing_agent", "claims_agent",
@@ -58,6 +41,15 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
     ctx, llm, _tools = _cfg(config)
     n = state.get("n_iteration", 0) + 1
     logger.info("[%s] 🧭 supervisor | iteration=%d", ctx.correlation_id, n)
+
+    tier3_agent = state.get("tier3_agent_override")
+    if tier3_agent:
+        return {
+            "n_iteration": n,
+            "next_agent": tier3_agent,
+            "task": state.get("user_input", ""),
+            "tier3_agent_override": None,
+        }
 
     # 1. Execution Phase (Check for existing plan)
     plan = state.get("plan")
@@ -123,13 +115,12 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
     facts = state.get("collected_facts") or []
     if facts:
         history += "\n[Agent findings this turn]\n" + "\n".join(facts)
-    system = render(load_prompt("supervisor"), conversation_history=history)
-    # Structural rule (LLMs reason; systems decide): clarification is only
-    # legitimate BEFORE any specialist has run this turn. Once facts exist,
-    # the identifiers were sufficient — remaining parts get ROUTED, so the
-    # ask_user tool is simply not offered mid-turn. (Fixes the observed
-    # failure of asking the user a question that belongs to a specialist.)
-    tools = [_ASK_USER_SPEC] if not facts else None
+    system = render(
+        load_prompt("supervisor", tier=config["configurable"].get("tier", 0)),
+        conversation_history=history,
+    )
+    # The supervisor communicates only through JSON. Mixing a pseudo-tool
+    # with the JSON contract can make Groq models interpret "json" as a tool.
     response = llm.complete(
         LlmRequest(
             agent="supervisor_agent",
@@ -137,20 +128,10 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
                 {"role": "system", "content": system},
                 {"role": "user", "content": state.get("user_input", "")},
             ],
-            tools=tools,
+            tools=None,
         ),
         correlation_id=ctx.correlation_id,
     )
-
-    for tc in response.tool_calls:
-        if tc.name == "ask_user":
-            question = tc.arguments.get("question", "Could you clarify your request?")
-            logger.info("[%s] 🧭 decision=clarify | question=%r", ctx.correlation_id, question[:100])
-            return {
-                "n_iteration": n,
-                "clarification_question": question,
-                "outcome": "clarification",
-            }
 
     decision = _parse_json(response.content or "")
 
@@ -166,6 +147,15 @@ def supervisor_node(state: dict, config: RunnableConfig) -> dict:
             "n_iteration": n,
             "final_answer": prose or _FALLBACK_REPLY,
             "outcome": "answer",
+        }
+
+    question = decision.get("clarification_question")
+    if question and not facts:
+        logger.info("[%s] 🧭 decision=clarify | question=%r", ctx.correlation_id, question[:100])
+        return {
+            "n_iteration": n,
+            "clarification_question": question,
+            "outcome": "clarification",
         }
 
     new_plan = decision.get("plan", [])

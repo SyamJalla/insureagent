@@ -21,8 +21,11 @@ def main() -> None:
     if not tracer.enabled:
         raise SystemExit("Langfuse is not reachable — start it first (docker compose up -d)")
     client = tracer._client
-    for path in sorted(Path("prompts").glob("*.yaml")):
-        name = path.stem
+    prompt_paths = {path.stem: path for path in Path("prompts").glob("*.yaml")}
+    prompt_paths.update(
+        {path.stem: path for path in Path("prompts/tier1").glob("*.yaml")}
+    )
+    for name, path in sorted(prompt_paths.items()):
         text = yaml.safe_load(path.read_text(encoding="utf-8"))["prompt"]
         client.create_prompt(name=name, prompt=text, labels=["production"], type="text")
         print(f"pushed {name} ({len(text)} chars)")
