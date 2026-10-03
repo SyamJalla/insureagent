@@ -6,6 +6,8 @@ python-jose[cryptography]
 bcrypt
 psycopg2-binary
 langgraph            # pulls langchain-core
+laya                 # Laya decision model
+laya[langchain]      # Langchain integration for Laya
 openai
 groq
 langfuse==4.15.4

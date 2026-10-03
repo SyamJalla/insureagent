@@ -5,6 +5,7 @@ above this layer changes.
 """
 from abc import ABC, abstractmethod
 import json
+import math
 
 from openai import OpenAI
 
@@ -24,7 +25,16 @@ class OpenAiProvider(LlmProvider):
     def __init__(self, api_key: str):
         self._client = OpenAI(api_key=api_key)
 
+    @staticmethod
+    def _temperature_unsupported(error: Exception) -> bool:
+        return (
+            getattr(error, "param", None) == "temperature"
+            and getattr(error, "code", None)
+            in {"unsupported_parameter", "unsupported_value"}
+        )
+
     def complete(self, request: LlmRequest, model: str) -> LlmResponse:
+        print(f"[llm-provider] openai agent={request.agent} model={model} messages={len(request.messages)}")
         kwargs: dict = {
             "model": model,
             "messages": request.messages,
@@ -32,7 +42,13 @@ class OpenAiProvider(LlmProvider):
         }
         if request.tools:
             kwargs["tools"] = request.tools
-        resp = self._client.chat.completions.create(**kwargs)
+        try:
+            resp = self._client.chat.completions.create(**kwargs)
+        except Exception as exc:
+            if not self._temperature_unsupported(exc):
+                raise
+            kwargs.pop("temperature")
+            resp = self._client.chat.completions.create(**kwargs)
         choice = resp.choices[0].message
         tool_calls = [
             ToolCall(
@@ -76,6 +92,7 @@ class GroqProvider(LlmProvider):
         self._client = Groq(api_key=api_key)
 
     def complete(self, request: LlmRequest, model: str) -> LlmResponse:
+        print(f"[llm-provider] groq agent={request.agent} model={model} messages={len(request.messages)}")
         kwargs: dict = {
             "model": model,
             "messages": request.messages,
@@ -108,53 +125,62 @@ class GroqProvider(LlmProvider):
 
 
 class LayaClassifier:
-    """Thin HTTP wrapper around the Laya non-autoregressive classification endpoint.
+    """Classify Tier 3 requests with the local Laya router."""
 
-    Deliberately NOT a subclass of LlmProvider — it classifies requests into
-    insurance domains rather than generating text.  The result drives the Tier-3
-    domain-routing decision.
+    VALID_DECISIONS = frozenset({"billing", "policy", "claims", "fallback"})
 
-    Input : user message (str) + router system prompt (str)
-    Output: {'decision': 'billing'|'policy'|'claims'|'fallback',
-             'confidence': float 0.0–1.0}
+    def __init__(self):
+        from laya.integrations.langchain import LayaRouter
 
-    Any HTTP error, timeout, or unrecognised label is caught and returned as
-    {'decision': 'fallback', 'confidence': 0.0} so the pipeline can gracefully
-    fall back to Tier-2 Groq without crashing.
-    """
+        self._router_factory = LayaRouter
+        self._router = None
 
-    VALID_DOMAINS = frozenset({"billing", "policy", "claims"})
-
-    def __init__(self, api_key: str, base_url: str, model: str):
-        self._api_key = api_key
-        self._base_url = base_url.rstrip("/")
-        self._model = model
-
-    def classify(self, user_input: str, router_prompt: str) -> dict:
+    def classify(self, user_input: str, router_config: dict) -> dict:
         import logging
-        import httpx
 
-        _log = logging.getLogger("insureagent.laya")
-        try:
-            r = httpx.post(
-                f"{self._base_url}/classify",
-                headers={"Authorization": f"Bearer {self._api_key}"},
-                json={
-                    "model": self._model,
-                    "system": router_prompt,
-                    "input": user_input,
-                },
-                timeout=5.0,
-            )
-            r.raise_for_status()
-            data = r.json()
-            decision = data.get("decision", "fallback")
-            if decision not in self.VALID_DOMAINS:
-                decision = "fallback"
-            return {
-                "decision": decision,
-                "confidence": float(data.get("confidence", 0.0)),
-            }
-        except Exception as exc:
-            _log.warning("Laya classify failed (%s) — using fallback", exc)
-            return {"decision": "fallback", "confidence": 0.0}
+        logger = logging.getLogger("insureagent.laya")
+        question = router_config["question"]
+        from app.tracing import get_tracer
+
+        print(f"[laya] classify input={user_input[:80]!r} prompt={question.get('name', 'unknown')}")
+        tracer = get_tracer()
+        with tracer.observation(
+            "laya:classification",
+            input={"character_count": len(user_input)},
+            metadata={"provider": "laya", "execution": "local"},
+        ) as span:
+            try:
+                if self._router is None:
+                    self._router = self._router_factory(
+                        criteria=router_config["allowed_answers"],
+                        instructions=question["prompt"],
+                    )
+                decision = self._router.invoke(user_input)
+                answer = (self._router.last_decision or {}).get("answers", {}).get("route", {})
+                confidence = float(
+                    answer.get("answer_confidence", answer.get("confidence", 0.0)) or 0.0
+                )
+                if (
+                    decision not in self.VALID_DECISIONS
+                    or not math.isfinite(confidence)
+                    or not 0.0 <= confidence <= 1.0
+                ):
+                    decision, confidence = "fallback", 0.0
+                outcome = {"decision": decision, "confidence": confidence}
+                print(f"[laya] decision={decision} confidence={confidence} source={question.get('name', 'unknown')}")
+                if span:
+                    span.update(output=outcome)
+                return outcome
+            except Exception as exc:
+                print(f"[laya] classification failed: {type(exc).__name__}: {exc}")
+                logger.warning(
+                    "Laya classification failed (%s) — using fallback",
+                    type(exc).__name__,
+                )
+                if span:
+                    span.update(
+                        output={"decision": "fallback", "confidence": 0.0},
+                        level="ERROR",
+                        status_message=f"{type(exc).__name__}: local classification failed",
+                    )
+                return {"decision": "fallback", "confidence": 0.0}

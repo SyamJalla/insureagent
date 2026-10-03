@@ -45,10 +45,18 @@ class LlmGateway:
             model = self._model_for(tier)
             for attempt in range(1, _MAX_ATTEMPTS + 1):
                 start = time.monotonic()
+                print(
+                    f"[llm] agent={request.agent} tier={tier.name} model={model} "
+                    f"attempt={attempt} correlation_id={correlation_id}"
+                )
                 try:
                     response = self._provider.complete(request, model)
                 except Exception as exc:  # provider/network errors: retry, then fall back
                     last_error = exc
+                    print(
+                        f"[llm] call failed agent={request.agent} model={model} "
+                        f"attempt={attempt} error={type(exc).__name__}: {exc}"
+                    )
                     logger.warning(
                         "[%s] llm call failed (agent=%s model=%s attempt=%d): %s",
                         correlation_id, request.agent, model, attempt, exc,
@@ -64,6 +72,11 @@ class LlmGateway:
                     correlation_id=correlation_id,
                 )
                 self.records.append(record)
+                print(
+                    f"[llm] completed agent={request.agent} model={model} "
+                    f"input_tokens={response.input_tokens} output_tokens={response.output_tokens} "
+                    f"latency_ms={record.latency_ms}"
+                )
                 logger.info("🧠 llm_call %s", record.model_dump_json())
                 from app.tracing import get_tracer  # local import: avoid cycle at module load
 
@@ -77,6 +90,7 @@ class LlmGateway:
                 return response
             tier = self._next_tier(tier)
             if tier is not None:
+                print(f"[llm] falling back to tier={tier.name} for agent={request.agent}")
                 logger.warning("falling back to tier=%s for agent=%s", tier.value, request.agent)
         raise RuntimeError(f"LLM call failed for {request.agent} after retries") from last_error
 
@@ -125,7 +139,7 @@ def build_gateway_for_tier(tier: int, model_override: str | None = None) -> LlmG
 
     Tier 1 → OpenAI (separate supervisor and specialist models)
     Tier 2 → Groq   (separate supervisor and specialist models)
-    Tier 3 → Laya classifier + Groq open-source worker
+    Tier 3 → Laya decision classifier + Groq open-source worker
     """
     s = get_settings()
     if tier == 2:

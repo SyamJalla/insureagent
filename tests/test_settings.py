@@ -33,3 +33,10 @@ def test_dev_tolerates_default_secret(monkeypatch):
         monkeypatch, ENVIRONMENT="dev", JWT_SECRET="change-me-in-.env"
     )
     assert s.jwt_secret == "change-me-in-.env"
+
+
+def test_tier3_uses_local_laya_settings():
+    s = config.Settings(_env_file=None)
+
+    assert s.tier3_confidence_threshold == 0.85
+    assert s.tier3_worker_model == "openai/gpt-oss-20b"

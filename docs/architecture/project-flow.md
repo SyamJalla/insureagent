@@ -20,7 +20,7 @@ flowchart TD
     RUN --> TIER{Selected tier}
     TIER -- Tier 1 --> OPENAI[OpenAI gateway]
     TIER -- Tier 2 --> GROQ[Groq gateway]
-    TIER -- Tier 3 --> LAYA[Laya intent classifier]
+    TIER -- Tier 3 --> LAYA[Local Laya decision classifier]
     LAYA -- Confident domain --> GROQ
     LAYA -- Low confidence or unavailable --> SUP
     SUP -- Clarification or direct reply --> REPLY[Return supervisor reply]

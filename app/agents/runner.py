@@ -42,6 +42,11 @@ def _tool_gateway():
     return ToolGateway()
 
 
+@lru_cache
+def _tier_router(tier: int = 3):
+    return TierRouter(tier=tier)
+
+
 def _render_history(ctx: RequestContext, history: list[Message], user_input: str) -> str:
     lines = [
         f"[Verified session context — role: {ctx.user.role.value}"
@@ -82,7 +87,7 @@ class AgentRunner:
             tier3_agent_override = None
             model_override = None
             if tier == 3:
-                tier3_agent_override, model_override = TierRouter(tier=3).resolve(user_input)
+                tier3_agent_override, model_override = _tier_router(tier=3).resolve(user_input)
             llm = build_gateway_for_tier(tier, model_override=model_override)
             tools = _tool_gateway()
             with tracer.request_trace(ctx, user_input):

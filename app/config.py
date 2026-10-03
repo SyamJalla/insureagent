@@ -59,10 +59,7 @@ class Settings(BaseSettings):
     tier2_supervisor_model: str = "openai/gpt-oss-120b"
     tier2_specialist_model: str = "openai/gpt-oss-20b"
 
-    # Tier 3 – Laya classifier (router) + Groq workers (execution)
-    laya_api_key: str | None = None
-    laya_base_url: str = "https://api.laya.ai"
-    tier3_router_model: str = "laya-classifier-v1"   # env: TIER3_ROUTER_MODEL
+    # Tier 3 – Laya decision router + Groq workers (execution)
     tier3_worker_model: str = "openai/gpt-oss-20b"  # env: TIER3_WORKER_MODEL
     tier3_confidence_threshold: float = Field(default=0.85, ge=0, le=1)
 

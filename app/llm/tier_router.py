@@ -1,25 +1,33 @@
-"""Tier-based request routing — Tier 3 Laya domain classifier.
+"""Tier-based request routing — Tier 3 Laya decision classifier.
 
 Tier 1 → OpenAI gateway (role-specific models)
 Tier 2 → Groq gateway   (role-specific models)
-Tier 3 → Laya classifier selects domain → Groq open-source worker
+Tier 3 → Laya selects domain → Groq open-source worker
 
-This module is the ONLY place that knows about Laya.  Everything above it
+This module owns Tier 3 classifier integration. Everything above it
 (runner, orchestrator, specialists) stays unchanged.
 """
 import logging
+from pathlib import Path
+
+import yaml
 
 from app.config import get_settings
 
 logger = logging.getLogger("insureagent.tier_router")
 
-# Map Laya classification labels → existing specialist agent names.
+# Map Laya decision labels → existing specialist agent names.
 # These names must match the node names in app/agents/orchestrator.py.
 _DOMAIN_TO_AGENT: dict[str, str] = {
     "billing": "billing_agent",
     "policy":  "policy_agent",
     "claims":  "claims_agent",
 }
+
+
+def _load_router_config() -> dict:
+    with Path("prompts/tier3/router.yaml").open(encoding="utf-8") as stream:
+        return yaml.safe_load(stream)
 
 
 class TierRouter:
@@ -38,20 +46,12 @@ class TierRouter:
         self._tier3_model = s.tier3_worker_model
         self._tier2_model = s.tier2_specialist_model
 
-        # Lazily build Laya classifier only when Tier 3 is active
-        self._laya = None
-        if self._tier == 3 and s.laya_api_key:
+        self._classifier = None
+        if self._tier == 3:
             from app.llm.provider import LayaClassifier
-            self._laya = LayaClassifier(
-                api_key=s.laya_api_key,
-                base_url=s.laya_base_url,
-                model=s.tier3_router_model,
-            )
-        elif self._tier == 3 and not s.laya_api_key:
-            logger.warning(
-                "ACTIVE_TIER=3 but LAYA_API_KEY is missing — "
-                "Tier 3 will always fall back to Tier-2 Groq."
-            )
+
+            self._classifier = LayaClassifier()
+            logger.info("Tier 3 using local Laya router")
 
     # ── Public API ───────────────────────────────────────────────────────
 
@@ -66,17 +66,18 @@ class TierRouter:
 
         Tier 1 callers should not use this method — they use the OpenAI gateway.
         """
-        if self._tier != 3 or self._laya is None:
-            # Tier 2: no Laya, no override — just use the Groq model.
+        if self._tier != 3 or self._classifier is None:
+            # If no classifier is available, use the Tier 2 Groq model.
             return None, self._tier2_model
 
-        # ── Tier 3: call Laya to classify the user input ─────────────────
-        from app.agents.prompt_source import get_prompt_source
-        router_prompt = get_prompt_source(tier=3).get("router")
-        result = self._laya.classify(user_input, router_prompt)
+        result = self._classifier.classify(user_input, _load_router_config())
 
+        print(
+            f"[tier3] decision={result['decision']} confidence={result['confidence']:.3f} "
+            f"threshold={self._threshold:.2f}"
+        )
         logger.info(
-            "🔀 laya classify | decision=%s confidence=%.3f",
+            "tier3 decision | decision=%s confidence=%.3f",
             result["decision"], result["confidence"],
         )
 
@@ -85,12 +86,17 @@ class TierRouter:
             and result["decision"] in _DOMAIN_TO_AGENT
         ):
             agent_name = _DOMAIN_TO_AGENT[result["decision"]]
+            print(f"[tier3] route to {agent_name} via domain={result['decision']}")
             logger.info("🔀 tier3 → domain=%s agent=%s", result["decision"], agent_name)
             return agent_name, self._tier3_model
 
         # Low-confidence or 'fallback' label → degrade to Tier-2 Groq
+        print(
+            f"[tier3] falling back to Tier-2 Groq because confidence={result['confidence']:.3f} "
+            f"decision={result['decision']}"
+        )
         logger.warning(
-            "🔀 laya confidence %.3f below threshold %.2f or decision=%r "
+            "tier3 confidence %.3f below threshold %.2f or decision=%r "
             "— falling back to Tier-2 Groq",
             result["confidence"], self._threshold, result["decision"],
         )

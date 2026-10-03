@@ -48,9 +48,7 @@ python scripts/fetch_models.py            # non-pip models: injection ~700MB, em
    GROQ_API_KEY=                  # required for Tier 2 or Tier 3
    TIER2_SUPERVISOR_MODEL=openai/gpt-oss-120b
    TIER2_SPECIALIST_MODEL=openai/gpt-oss-20b
-   LAYA_API_KEY=                  # optional; without it Tier 3 falls back to Tier 2
-   LAYA_BASE_URL=https://api.laya.ai
-   TIER3_ROUTER_MODEL=laya-classifier-v1
+   TIER3_CONFIDENCE_THRESHOLD=0.85 # confidence below this also routes to the Tier 2 Groq model
    TIER3_WORKER_MODEL=openai/gpt-oss-20b
    JWT_SECRET=<openssl rand -hex 32>
    APP_DB_URL=postgresql://postgres:root@localhost:5433/insureagent
@@ -63,7 +61,9 @@ python scripts/fetch_models.py            # non-pip models: injection ~700MB, em
 The chat header's tier selector overrides `ACTIVE_TIER` for each request.
 Tiers 1 and 2 use separate supervisor and specialist models. Tier 1 uses
 OpenAI; Tier 2 uses open-source Groq models; Tier 3 classifies the first domain
-with Laya and uses an open-source Groq model for agent execution. Canonical prompts
+with the local Laya model and uses an open-source Groq model for agent execution.
+The first Tier 3 classification may take longer while Laya loads its local model.
+Canonical prompts
 live in `prompts/tier1/`; Tier 2 and Tier 3 overrides live in their respective
 directories and fall back to the Tier 1 prompt when an override is absent.
 

@@ -71,3 +71,7 @@ Jayanth_Test_cases.xlsx
 s -ExecutionPolicy RemoteSigned) ; (& dIndividual_Contributionvolunteer_contributioninsureagent.venvScriptsActivate.ps1)
 implementation_plan.md
 # .env.example
+
+laya_desc.txt
+laya_router.txt
+laya_router_core.txt
